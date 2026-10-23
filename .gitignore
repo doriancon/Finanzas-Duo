@@ -1,0 +1,25 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Local environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tmp
+*.temp
+
+# Editor and operating system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
