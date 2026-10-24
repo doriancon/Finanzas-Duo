@@ -29,6 +29,7 @@ export type Entry = {
   incomeSourceId?: string;
   description: string;
   date: string;
+  createdAt?: string;
 };
 export type IncomeGoal = { month: string; currency: Currency; view: IncomeView; previous: number; target: number; growthType: 'percent' | 'fixed'; growth: number; includeConverted?: boolean; rates?: Partial<Record<Currency,number>>; baselineManual?: boolean };
 export type IncomeQuote = { id:string; month:string; from:Currency; to:Currency; rate:number; date:string };

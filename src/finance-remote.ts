@@ -42,7 +42,10 @@ export async function loadFinanceSpace(client: SupabaseClient, spaceId: string):
   const fetchAll = async (table: Table): Promise<Row[]> => {
     const rows: Row[] = [];
     for (let offset = 0; ; offset += 500) {
-      const result = await client.from(table).select('*').eq('space_id', spaceId).range(offset, offset + 499);
+      let query = client.from(table).select('*').eq('space_id', spaceId);
+      if (table === 'finance_entries') query = query.order('entry_date', { ascending: false })
+        .order('created_at', { ascending: false }).order('id', { ascending: false });
+      const result = await query.range(offset, offset + 499);
       checked(result);
       const page = (result.data || []) as Row[];
       rows.push(...page);
@@ -74,7 +77,7 @@ export async function loadFinanceSpace(client: SupabaseClient, spaceId: string):
     giroReference: e.giro_reference || undefined, giroProfit: e.giro_profit == null ? undefined : number(e.giro_profit),
     giroProfitCurrency: e.giro_profit_currency || undefined, fundId: e.fund_id || undefined,
     categoryId: e.category_id || undefined, incomeSourceId: e.income_source_id || undefined,
-    description: e.description, date: e.entry_date } as Entry));
+    description: e.description, date: e.entry_date, createdAt: e.created_at } as Entry));
   return data;
 }
 

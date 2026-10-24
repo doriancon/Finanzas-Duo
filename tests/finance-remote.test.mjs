@@ -46,19 +46,26 @@ test('invitations use the owner and member RPCs and expose permission errors', a
 test('shared rows reconstruct FinanceData and retain all paginated movements', async () => {
   const ledger = Array.from({ length: 501 }, (_, index) => ({ id: `expense-${index}`, space_id: 'shared',
     kind: 'expense', scope: 'everyday', amount: '1.00', currency: 'ARS', account_id: 'ARS-efectivo',
-    description: 'Compra', entry_date: '2026-10-23' }));
+    description: 'Compra', entry_date: '2026-10-23', created_at: `2026-10-23T${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}:00Z` }));
   const rows = {
     finance_accounts: [{ id: 'ARS-efectivo', currency: 'ARS', method: 'Efectivo', name: 'Efectivo', opening: '1000.00' }],
     finance_entries: ledger,
     finance_categories: [], finance_income_sources: [], finance_funds: [], finance_budgets: [],
     finance_business_openings: [], finance_income_goals: [], finance_income_quotes: [],
   };
-  const client = { from(table) { return { select() { return { eq() { return { async range(start, end) {
+  const orderCalls = [];
+  const client = { from(table) { return { select() { return { eq() { return { order(column, options) { orderCalls.push({table,column,ascending:options.ascending}); return this; }, async range(start, end) {
     return { data: rows[table].slice(start, end + 1), error: null };
   } }; } }; } }; } };
   const data = await loadFinanceSpace(client, 'shared');
   assert.equal(data.entries.length, 501);
   assert.equal(accountBalance(data, 'ARS-efectivo'), 499);
+  assert.equal(data.entries[0].createdAt, ledger[0].created_at);
+  assert.deepEqual(orderCalls.slice(0,3), [
+    {table:'finance_entries',column:'entry_date',ascending:false},
+    {table:'finance_entries',column:'created_at',ascending:false},
+    {table:'finance_entries',column:'id',ascending:false},
+  ]);
 });
 
 test('simultaneous movement submissions use transactional RPCs with independent request ids', async () => {

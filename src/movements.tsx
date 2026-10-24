@@ -1,7 +1,8 @@
 import {useState} from 'react';
 import {ArrowRight,Plus,Search,Trash2} from 'lucide-react';
 import {CURRENCIES,Currency,dateISO,Entry,FinanceData,monthKey,monthLabel,paginate,Scope,shiftMonth} from './domain';
-import {categoryName,Empty,EntryRow,incomeSourceName,sortedEntries} from './ui';
+import {categoryName,Empty,EntryRow,incomeSourceName} from './ui';
+import {sortedEntries} from './entry-order';
 
 export function Movements({data,onNew,onEdit,onDelete}:{data:FinanceData;onNew:()=>void;onEdit:(entry:Entry)=>void;onDelete:(entry:Entry)=>void}) {
   const [month,setMonth]=useState(monthKey(new Date()));
