@@ -1,5 +1,5 @@
 import { roundMoney } from './domain.ts';
-import type { Currency, Entry, FinanceData, GiroLink } from './domain.ts';
+import type { Currency, Entry, FinanceData, GiroCashPlan, GiroLink } from './domain.ts';
 
 const near = (a:number,b:number,currency:Currency) => Math.abs(a-b) <= (currency==='USDT'?0.000001:0.01)+1e-8;
 const toCurrency = (data:FinanceData,entry:Entry) => data.accounts.find(a=>a.id===entry.toAccountId)?.currency;
@@ -39,6 +39,29 @@ export function giroCapitalPending(data:FinanceData,giro:Entry):number {
   return roundMoney(Math.max(0,giro.amount-recovered),giro.currency);
 }
 
+export function giroRecoveredCapital(data:FinanceData,giro:Entry):number {
+  return roundMoney(Math.max(0,giro.amount-giroCapitalPending(data,giro)),giro.currency);
+}
+
+export function availableGiroChanges(data:FinanceData):Entry[] {
+  return data.entries.filter(e=>e.kind==='transfer'&&e.received!==undefined&&
+    toCurrency(data,e)!==undefined&&toCurrency(data,e)!==e.currency&&
+    roundMoney(e.amount-data.giroLinks.filter(l=>l.transferId===e.id)
+      .reduce((sum,l)=>sum+l.fromAmount,0),e.currency)>0);
+}
+
+export function validateGiroCashPlans(data:FinanceData,giro:Entry,plans:GiroCashPlan[]):string|null {
+  if(giro.kind!=='giro'||toCurrency(data,giro)!=='ARS')return 'El destino del cobro solo se registra para giros recibidos en ARS.';
+  if(new Set(plans.map(p=>p.purpose)).size!==plans.length||plans.some(p=>p.giroId!==giro.id||
+      !['recover','keep','free'].includes(p.purpose)||!Number.isFinite(p.amountArs)||p.amountArs<=0||
+      roundMoney(p.amountArs,'ARS')!==p.amountArs||
+      (p.purpose==='recover'?!(['ARS','BOB','USD','USDT'] as string[]).includes(p.targetCurrency||''):p.targetCurrency!==undefined)))
+    return 'Revisá los importes y la moneda del destino del cobro.';
+  if(roundMoney(plans.reduce((sum,p)=>sum+p.amountArs,0),'ARS')>(giro.received||0))
+    return 'La suma de destinos supera el total cobrado en este giro.';
+  return null;
+}
+
 export function giroDocumentedCost(data:FinanceData,giro:Entry):number|null {
   if(toCurrency(data,giro)!=='ARS'||giroCapitalPending(data,giro)>0)return null;
   const flows=new Map<Currency,{in:number;out:number}>();
@@ -57,8 +80,25 @@ export function giroDocumentedCost(data:FinanceData,giro:Entry):number|null {
 
 export function giroMonthlyBalance(data:FinanceData,month:string){
   const giros=data.entries.filter(e=>e.kind==='giro'&&e.date.slice(0,7)===month);
-  const confirmed=data.giroResults.filter(result=>result.recognizedMonth===month);
-  const capital=(['ARS','BOB','USD','USDT'] as Currency[]).map(currency=>({currency,amount:roundMoney(giros.filter(g=>g.currency===currency).reduce((sum,g)=>sum+giroCapitalPending(data,g),0),currency)}));
-  return {count:giros.length,pending:giros.filter(g=>!data.giroResults.some(r=>r.giroId===g.id)).length,
-    profitArs:roundMoney(confirmed.reduce((sum,r)=>sum+r.profitArs,0),'ARS'),capital};
+  const declared=giros.filter(g=>g.giroProfit!==undefined&&(g.giroProfitCurrency||toCurrency(data,g))==='ARS');
+  const historical=data.giroResults.filter(result=>result.recognizedMonth===month&&
+    !data.entries.some(g=>g.id===result.giroId&&g.giroProfit!==undefined));
+  const currencies=(['ARS','BOB','USD','USDT'] as Currency[]);
+  const capital=currencies.map(currency=>{
+    const selected=giros.filter(g=>g.currency===currency);
+    return {currency,
+      used:roundMoney(selected.reduce((sum,g)=>sum+g.amount,0),currency),
+      recovered:roundMoney(selected.reduce((sum,g)=>sum+giroRecoveredCapital(data,g),0),currency),
+      unclassified:roundMoney(selected.reduce((sum,g)=>sum+giroCapitalPending(data,g),0),currency)};
+  });
+  const cashPlans=data.giroCashPlans.filter(p=>giros.some(g=>g.id===p.giroId));
+  const cash=(['recover','keep','free'] as const).map(purpose=>({purpose,
+    amountArs:roundMoney(cashPlans.filter(p=>p.purpose===purpose).reduce((sum,p)=>sum+p.amountArs,0),'ARS')}));
+  const unclassifiedArs=roundMoney(Math.max(0,giros.filter(g=>toCurrency(data,g)==='ARS').reduce((sum,g)=>sum+(g.received||0),0)-
+    cashPlans.reduce((sum,p)=>sum+p.amountArs,0)),'ARS');
+  return {count:giros.length,
+    pending:giros.filter(g=>g.giroProfit===undefined&&!data.giroResults.some(r=>r.giroId===g.id)).length,
+    profitArs:roundMoney(declared.reduce((sum,g)=>sum+(g.giroProfit||0),0),'ARS'),
+    historicProfitArs:roundMoney(historical.reduce((sum,r)=>sum+r.profitArs,0),'ARS'),
+    capital,cash,unclassifiedArs};
 }

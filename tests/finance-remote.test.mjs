@@ -52,7 +52,7 @@ test('shared rows reconstruct FinanceData and retain all paginated movements', a
     finance_entries: ledger,
     finance_categories: [], finance_income_sources: [], finance_funds: [], finance_budgets: [],
     finance_business_openings: [], finance_income_goals: [], finance_income_quotes: [],
-    finance_giro_links: [], finance_giro_results: [],
+    finance_giro_links: [], finance_giro_results: [], finance_giro_cash_plans: [],
   };
   const orderCalls = [];
   const client = { from(table) { return { select() { return { eq() { return { order(column, options) { orderCalls.push({table,column,ascending:options.ascending}); return this; }, async range(start, end) {
@@ -101,4 +101,20 @@ test('existing shared finance data still loads before the giro migration is appl
   assert.equal(data.giroAccountingReady,false);
   assert.deepEqual(data.giroLinks,[]);
   assert.deepEqual(data.giroResults,[]);
+  assert.equal(data.giroCashPlanReady,false);
+  assert.deepEqual(data.giroCashPlans,[]);
+});
+
+test('destination decisions use one RPC and never submit a financial movement',async()=>{
+  const {client,calls}=clientFixture();
+  const before=emptyData();
+  const after={...before,giroCashPlans:[
+    {giroId:'giro-1',purpose:'recover',amountArs:40_000,targetCurrency:'USDT'},
+    {giroId:'giro-1',purpose:'free',amountArs:25_000},
+  ]};
+  await persistFinanceChange(client,'shared',before,after);
+  assert.deepEqual(calls.filter(call=>call.action==='rpc'),[{
+    action:'rpc',name:'set_finance_giro_cash_plans',args:{p_space_id:'shared',p_giro_id:'giro-1',
+      p_plans:[{purpose:'recover',amount_ars:40_000,target_currency:'USDT'},{purpose:'free',amount_ars:25_000,target_currency:null}]},
+  }]);
 });

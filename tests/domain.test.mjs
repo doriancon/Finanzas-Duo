@@ -191,7 +191,7 @@ test('legacy demo migration keeps custom records but removes the sample ledger',
   try{const loaded=loadData();assert.deepEqual(loaded.entries.map(e=>e.id),['my-expense']);assert.equal(loaded.budget.amount,0);assert.equal(loaded.accounts.find(a=>a.id==='ARS-transferencia').opening,0)}finally{globalThis.localStorage=previous}
 });
 
-test('an estimated giro gain in another currency stays separate from personal income',()=>{
+test('a historical giro gain in another currency stays separate from personal income',()=>{
   const data=base();data.accounts.push({id:'bob-transfer',currency:'BOB',method:'Transferencia',name:'Transferencia',opening:1000});
   const giro=entry('other-currency','giro',300,'giro',{currency:'BOB',accountId:'bob-transfer',toAccountId:'ars-transfer',received:50_000,giroProfit:10,giroProfitCurrency:'USD'});
   assert.equal(canApplyEntry(data,giro),null);

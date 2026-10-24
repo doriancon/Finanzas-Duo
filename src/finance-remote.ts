@@ -1,14 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Account, Category, Currency, Entry, FinanceData, GiroLink, GiroResult, Goal, IncomeGoal, IncomeQuote, IncomeSource, Pasanaco } from './domain.ts';
+import type { Account, Category, Currency, Entry, FinanceData, GiroCashPlan, GiroLink, GiroResult, Goal, IncomeGoal, IncomeQuote, IncomeSource, Pasanaco } from './domain.ts';
 import { emptyData } from './data.ts';
 
 type Row = Record<string, any>;
 type Table = 'finance_accounts' | 'finance_categories' | 'finance_income_sources' | 'finance_funds' |
-  'finance_budgets' | 'finance_business_openings' | 'finance_income_goals' | 'finance_income_quotes' | 'finance_entries' | 'finance_giro_links' | 'finance_giro_results';
+  'finance_budgets' | 'finance_business_openings' | 'finance_income_goals' | 'finance_income_quotes' | 'finance_entries' | 'finance_giro_links' | 'finance_giro_results' | 'finance_giro_cash_plans';
 
 const tables: Table[] = ['finance_accounts', 'finance_categories', 'finance_income_sources', 'finance_funds',
   'finance_budgets', 'finance_business_openings', 'finance_income_goals', 'finance_income_quotes', 'finance_entries'];
 let giroSchemaUnavailable=false;
+let giroCashSchemaUnavailable=false;
 const number = (value: unknown) => Number(value ?? 0);
 const checked = ({ error }: { error: { message: string } | null }) => { if (error) throw new Error(error.message); };
 const requestIds = new Map<string, string>();
@@ -54,16 +55,19 @@ export async function loadFinanceSpace(client: SupabaseClient, spaceId: string):
     }
   };
   const [accounts, categories, sources, funds, budgets, openings, goals, quotes, entries] = await Promise.all(tables.map(fetchAll));
-  const optional = async (table:Table) => {
-    if(giroSchemaUnavailable)return {rows:[] as Row[],ready:false};
+  const optional = async (table:Table, cash=false) => {
+    if(cash?giroCashSchemaUnavailable:giroSchemaUnavailable)return {rows:[] as Row[],ready:false};
     try { return {rows:await fetchAll(table),ready:true}; }
-    catch(error){if(/could not find the table|does not exist|relation .* does not exist/i.test(String(error))){giroSchemaUnavailable=true;return {rows:[] as Row[],ready:false}}throw error;}
+    catch(error){if(/could not find the table|does not exist|relation .* does not exist/i.test(String(error))){if(cash)giroCashSchemaUnavailable=true;else giroSchemaUnavailable=true;return {rows:[] as Row[],ready:false}}throw error;}
   };
-  const [links,results]=await Promise.all([optional('finance_giro_links'),optional('finance_giro_results')]);
+  const [links,results,plans]=await Promise.all([optional('finance_giro_links'),optional('finance_giro_results'),optional('finance_giro_cash_plans',true)]);
   const data = emptyData();
   data.giroAccountingReady=links.ready&&results.ready;
+  data.giroCashPlanReady=plans.ready;
   data.giroLinks=links.rows.map(row=>({id:row.id,giroId:row.giro_id,transferId:row.transfer_id,fromAmount:number(row.from_amount),toAmount:number(row.to_amount)} as GiroLink));
   data.giroResults=results.rows.map(row=>({giroId:row.giro_id,costArs:number(row.cost_ars),feesArs:number(row.fees_ars),profitArs:number(row.profit_ars),evidence:row.evidence,confirmedAt:row.confirmed_at,recognizedMonth:row.recognized_month} as GiroResult));
+  data.giroCashPlans=plans.rows.map(row=>({giroId:row.giro_id,purpose:row.purpose,amountArs:number(row.amount_ars),
+    targetCurrency:row.target_currency||undefined} as GiroCashPlan));
   data.accounts = accounts.map(a => ({ id: a.id, currency: a.currency, method: a.method, name: a.name, opening: number(a.opening) } as Account));
   data.categories = categories.map(c => ({ id: c.id, name: c.name, color: c.color, icon: c.icon, archived: c.archived } as Category));
   data.incomeSources = sources.map(s => ({ id: s.id, name: s.name, archived: s.archived } as IncomeSource));
@@ -116,8 +120,12 @@ export async function persistFinanceChange(client: SupabaseClient, spaceId: stri
   const entries = differences(before.entries, after.entries);
   const links = differences(before.giroLinks||[],after.giroLinks||[]);
   const results = differences((before.giroResults||[]).map(r=>({...r,id:r.giroId})),(after.giroResults||[]).map(r=>({...r,id:r.giroId})));
+  const cashPlans=differences((before.giroCashPlans||[]).map(p=>({...p,id:`${p.giroId}:${p.purpose}`})),
+    (after.giroCashPlans||[]).map(p=>({...p,id:`${p.giroId}:${p.purpose}`})));
   if((links.changed.length||links.removed.length||results.changed.length||results.removed.length)&&!before.giroAccountingReady)
     throw new Error('Primero hay que aplicar la migración local preparada para vincular giros.');
+  if((cashPlans.changed.length||cashPlans.removed.length)&&!before.giroCashPlanReady)
+    throw new Error('Primero hay que aplicar la migración del destino del cobro.');
 
   await upsert(client, 'finance_categories', categories.changed.map(c => ({ space_id: spaceId, ...c })));
   await upsert(client, 'finance_income_sources', sources.changed.map(s => ({ space_id: spaceId, ...s })));
@@ -148,6 +156,10 @@ export async function persistFinanceChange(client: SupabaseClient, spaceId: stri
   if(results.removed.length||results.changed.some(result=>before.giroResults.some(old=>old.giroId===result.giroId)))
     throw new Error('Una ganancia confirmada es histórica y no se puede editar ni eliminar.');
   for(const result of results.changed)checked(await client.from('finance_giro_results').insert({space_id:spaceId,giro_id:result.giroId,cost_ars:result.costArs,fees_ars:result.feesArs,evidence:result.evidence}));
+  const changedGiros=new Set([...cashPlans.removed,...cashPlans.changed].map(plan=>plan.giroId));
+  for(const giroId of changedGiros)checked(await client.rpc('set_finance_giro_cash_plans',{
+    p_space_id:spaceId,p_giro_id:giroId,p_plans:after.giroCashPlans.filter(plan=>plan.giroId===giroId)
+      .map(plan=>({purpose:plan.purpose,amount_ars:plan.amountArs,target_currency:plan.targetCurrency||null}))}));
   for (const item of funds.removed) await remove(client, 'finance_funds', spaceId, item.id);
   for (const item of categories.removed) await remove(client, 'finance_categories', spaceId, item.id);
   for (const item of sources.removed) await remove(client, 'finance_income_sources', spaceId, item.id);

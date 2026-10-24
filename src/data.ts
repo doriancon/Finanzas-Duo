@@ -37,7 +37,7 @@ export const defaultIncomeSources: IncomeSource[] = [
 ];
 
 export const emptyData = (): FinanceData => ({
-  accounts: defaultAccounts.map(a => ({...a})), entries: [], giroLinks:[], giroResults:[], giroAccountingReady:true, businessOpening:{},
+  accounts: defaultAccounts.map(a => ({...a})), entries: [], giroLinks:[], giroResults:[], giroCashPlans:[], giroAccountingReady:true, giroCashPlanReady:true, businessOpening:{},
   categories: defaultCategories.map(c => ({...c})),
   incomeSources: defaultIncomeSources.map(s => ({...s})),
   goals: [], pasanaco: null, budget: {amount:0,currency:'ARS'}, incomeGoal: null, incomeGoals:[], incomeQuotes:[],
@@ -126,6 +126,8 @@ export const loadData = (): FinanceData => {
   data.incomeQuotes||=[];
   data.giroLinks||=[];
   data.giroResults||=[];
+  data.giroCashPlans||=[];
+  data.giroCashPlanReady??=true;
   data.businessOpening||={};
   for(const category of defaultCategories)if(!data.categories.some(c=>c.id===category.id))data.categories.push({...category});
   data.entries=data.entries.filter(e=>e.kind!=='allocation').map(removeOldGiroOptions);

@@ -33,6 +33,7 @@ export type Entry = {
 };
 export type GiroLink = { id: string; giroId: string; transferId: string; fromAmount: number; toAmount: number };
 export type GiroResult = { giroId: string; costArs: number; feesArs: number; profitArs: number; evidence: string; confirmedAt: string; recognizedMonth: string };
+export type GiroCashPlan = { giroId: string; purpose: 'recover' | 'keep' | 'free'; amountArs: number; targetCurrency?: Currency };
 export type IncomeGoal = { month: string; currency: Currency; view: IncomeView; previous: number; target: number; growthType: 'percent' | 'fixed'; growth: number; includeConverted?: boolean; rates?: Partial<Record<Currency,number>>; baselineManual?: boolean };
 export type IncomeQuote = { id:string; month:string; from:Currency; to:Currency; rate:number; date:string };
 export type FinanceData = {
@@ -40,7 +41,9 @@ export type FinanceData = {
   entries: Entry[];
   giroLinks: GiroLink[];
   giroResults: GiroResult[];
+  giroCashPlans: GiroCashPlan[];
   giroAccountingReady?: boolean;
+  giroCashPlanReady?: boolean;
   businessOpening: Partial<Record<Currency,number>>;
   categories: Category[];
   incomeSources: IncomeSource[];
