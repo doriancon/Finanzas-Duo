@@ -115,7 +115,9 @@ export function businessEntries(data: FinanceData, currency: Currency, month: st
 }
 
 export function incomeAmount(data: FinanceData, currency: Currency, month: string, view: IncomeView): number {
-  const ordinary=data.entries.filter(e => e.currency === currency && inMonth(e, month) && e.kind === 'income' && (view === 'combined' || (view === 'business' ? e.scope === 'business' : e.scope === 'everyday'))).reduce((sum, e) => sum + e.amount, 0);
+  const ordinary=data.entries.filter(e => e.currency === currency && inMonth(e, month) && e.kind === 'income' &&
+    (view === 'combined' ? e.scope === 'everyday' || e.scope === 'business' : e.scope === (view === 'business' ? 'business' : 'everyday')))
+    .reduce((sum, e) => sum + e.amount, 0);
   return roundMoney(ordinary,currency);
 }
 
@@ -139,9 +141,11 @@ export function consolidatedIncome(data:FinanceData,month:string,reference:Curre
 }
 
 export function incomeGoalAmount(data:FinanceData, month:string, goal:IncomeGoal):number {
-  if(!goal.includeConverted)return incomeAmount(data,goal.currency,month,goal.view);
-  const result=consolidatedIncome(data,month,goal.currency,goal.view,true);
-  if(goal.month===month&&result.missing.length)return result.total+result.missing.reduce((sum,c)=>sum+incomeAmount(data,c,month,goal.view)*(goal.rates?.[c]||0),0);
+  // Las metas personales siguen siendo personales incluso si una meta antigua guardó otra vista.
+  const view:IncomeView='available';
+  if(!goal.includeConverted)return incomeAmount(data,goal.currency,month,view);
+  const result=consolidatedIncome(data,month,goal.currency,view,true);
+  if(goal.month===month&&result.missing.length)return result.total+result.missing.reduce((sum,c)=>sum+incomeAmount(data,c,month,view)*(goal.rates?.[c]||0),0);
   return result.total;
 }
 

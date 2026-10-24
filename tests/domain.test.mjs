@@ -52,7 +52,8 @@ test('income goal converts only with an explicit reference rate',()=>{
   const goal={month,view:'available',currency:'ARS',previous:0,target:0,growthType:'percent',growth:10};
   assert.equal(incomeGoalAmount(data,month,goal),430_000);
   assert.equal(incomeGoalAmount(data,month,{...goal,includeConverted:true,rates:{USD:1200}}),550_000);
-  assert.equal(incomeGoalAmount(data,month,{...goal,includeConverted:true,rates:{USD:1200},view:'business'}),500_000);
+  assert.equal(incomeGoalAmount(data,month,{...goal,includeConverted:true,rates:{USD:1200},view:'business'}),550_000);
+  assert.equal(incomeGoalAmount(data,month,{...goal,includeConverted:true,rates:{USD:1200},view:'combined'}),550_000);
 });
 
 test('manual cross-currency transfer uses exactly the two entered amounts',()=>{

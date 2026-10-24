@@ -81,24 +81,6 @@ export function giroDocumentedCost(data:FinanceData,giro:Entry):number|null {
 export function giroMonthlyBalance(data:FinanceData,month:string){
   const giros=data.entries.filter(e=>e.kind==='giro'&&e.date.slice(0,7)===month);
   const declared=giros.filter(g=>g.giroProfit!==undefined&&(g.giroProfitCurrency||toCurrency(data,g))==='ARS');
-  const historical=data.giroResults.filter(result=>result.recognizedMonth===month&&
-    !data.entries.some(g=>g.id===result.giroId&&g.giroProfit!==undefined));
-  const currencies=(['ARS','BOB','USD','USDT'] as Currency[]);
-  const capital=currencies.map(currency=>{
-    const selected=giros.filter(g=>g.currency===currency);
-    return {currency,
-      used:roundMoney(selected.reduce((sum,g)=>sum+g.amount,0),currency),
-      recovered:roundMoney(selected.reduce((sum,g)=>sum+giroRecoveredCapital(data,g),0),currency),
-      unclassified:roundMoney(selected.reduce((sum,g)=>sum+giroCapitalPending(data,g),0),currency)};
-  });
-  const cashPlans=data.giroCashPlans.filter(p=>giros.some(g=>g.id===p.giroId));
-  const cash=(['recover','keep','free'] as const).map(purpose=>({purpose,
-    amountArs:roundMoney(cashPlans.filter(p=>p.purpose===purpose).reduce((sum,p)=>sum+p.amountArs,0),'ARS')}));
-  const unclassifiedArs=roundMoney(Math.max(0,giros.filter(g=>toCurrency(data,g)==='ARS').reduce((sum,g)=>sum+(g.received||0),0)-
-    cashPlans.reduce((sum,p)=>sum+p.amountArs,0)),'ARS');
   return {count:giros.length,
-    pending:giros.filter(g=>g.giroProfit===undefined&&!data.giroResults.some(r=>r.giroId===g.id)).length,
-    profitArs:roundMoney(declared.reduce((sum,g)=>sum+(g.giroProfit||0),0),'ARS'),
-    historicProfitArs:roundMoney(historical.reduce((sum,r)=>sum+r.profitArs,0),'ARS'),
-    capital,cash,unclassifiedArs};
+    profitArs:roundMoney(declared.reduce((sum,g)=>sum+(g.giroProfit||0),0),'ARS')};
 }

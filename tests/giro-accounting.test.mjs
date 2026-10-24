@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyData} from '../src/data.ts';
-import {accountBalance,everydayExpenses,incomeAmount,incomeGoalAmount,reservedBalance} from '../src/domain.ts';
-import {availableGiroChanges,giroCapitalPending,giroDocumentedCost,giroMonthlyBalance,validateGiroCashPlans,validateGiroLink} from '../src/giro-accounting.ts';
+import {accountBalance,consolidatedIncome,currencyBalance,everydayExpenses,incomeAmount,incomeGoalAmount,reservedBalance} from '../src/domain.ts';
+import {giroCapitalPending,giroDocumentedCost,giroMonthlyBalance,validateGiroLink} from '../src/giro-accounting.ts';
 
 const month='2026-10';
 const movement=(id,kind,amount,currency,accountId,toAccountId,received)=>({id,kind,scope:kind==='giro'?'giro':'everyday',amount,currency,accountId,toAccountId,received,description:id,date:'2026-10-10'});
@@ -32,10 +32,10 @@ test('two existing currency changes document a giro cost without changing balanc
   assert.equal(giroDocumentedCost(data,giro),90_000);
   assert.deepEqual(data.accounts.map(a=>accountBalance(data,a.id)),balances);
   assert.equal(incomeAmount(data,'ARS',month,'available'),0);
-  assert.equal(giroMonthlyBalance(data,month).pending,1);
+  assert.equal(giroMonthlyBalance(data,month).count,1);
   data.giroResults.push({giroId:giro.id,costArs:90_000,feesArs:0,profitArs:10_000,evidence:'Dos cambios documentados',confirmedAt:'2026-10-24T15:00:00Z',recognizedMonth:month});
   assert.equal(giroMonthlyBalance(data,month).profitArs,0);
-  assert.equal(giroMonthlyBalance(data,month).historicProfitArs,10_000);
+  assert.equal(data.giroResults[0].profitArs,10_000);
   assert.equal(incomeAmount(data,'ARS',month,'available'),0);
 });
 
@@ -50,18 +50,19 @@ test('partial replenishment and allocations shared by multiple giros cannot use 
   assert.equal(validateGiroLink(data,{id:'second',giroId:'other',transferId:'bob',fromAmount:4,toAmount:300}),null);
 });
 
-test('confirmed profit keeps its recognition month even if replenishment is optional or later',()=>{
+test('historical results and later replenishment stay stored without entering declared monthly profit',()=>{
   const {data,giro}=example();
   data.giroResults.push({giroId:giro.id,costArs:90_000,feesArs:2_000,profitArs:8_000,evidence:'Costo comprobado fuera de la app',confirmedAt:'2026-11-02T15:00:00Z',recognizedMonth:'2026-11'});
   assert.equal(giroCapitalPending(data,giro),600);
   assert.equal(giroMonthlyBalance(data,'2026-10').profitArs,0);
-  assert.equal(giroMonthlyBalance(data,'2026-11').historicProfitArs,8_000);
+  assert.equal(giroMonthlyBalance(data,'2026-11').profitArs,0);
   assert.equal(giroMonthlyBalance(data,'2026-10').count,1);
   const late={id:'late-bob',giroId:giro.id,transferId:'bob',fromAmount:8,toAmount:600};
   assert.equal(validateGiroLink(data,late),null);
   data.giroLinks.push(late);
   assert.equal(giroCapitalPending(data,giro),0);
-  assert.equal(giroMonthlyBalance(data,'2026-11').historicProfitArs,8_000);
+  assert.equal(data.giroResults[0].recognizedMonth,'2026-11');
+  assert.equal(giroMonthlyBalance(data,'2026-11').profitArs,0);
   assert.match(validateGiroLink(data,{id:'late-usdt',giroId:giro.id,transferId:'usdt',fromAmount:90_001,toAmount:8}),/asignado|corresponde|supera/);
 });
 
@@ -75,13 +76,19 @@ test('many giros and currency changes leave salary goals, budget and savings unt
   data.entries=[...giros,movement('usdt-bob','transfer',8,'USDT',usdt.id,bob.id,620),
     movement('ars-usdt','transfer',90_000,'ARS',ars.id,usdt.id,8)];
   const balances=data.accounts.map(a=>accountBalance(data,a.id));
+  assert.equal(accountBalance(data,bob.id),620);
+  assert.equal(accountBalance(data,usdt.id),100);
+  assert.equal(accountBalance(data,ars.id),2_010_000);
+  assert.equal(currencyBalance(data,'ARS'),2_010_000);
   assert.equal(incomeAmount(data,'ARS',month,'available'),0);
+  assert.equal(consolidatedIncome(data,month,'ARS','available').total,0);
   assert.equal(incomeGoalAmount(data,month,{month,currency:'ARS',view:'available',previous:0,target:1_000_000,growthType:'fixed',growth:0}),0);
   assert.deepEqual(everydayExpenses(data,'BOB',month),[]);
+  assert.deepEqual(everydayExpenses(data,'ARS',month),[]);
   assert.equal(reservedBalance(data,'meta-inexistente'),0);
   assert.equal(giroMonthlyBalance(data,month).profitArs,200_000);
-  assert.equal(giroMonthlyBalance(data,month).capital.find(x=>x.currency==='BOB').used,12_000);
-  data.giroCashPlans=[{giroId:'giro-0',purpose:'free',amountArs:20_000}];
+  assert.equal(giroMonthlyBalance(data,month).count,20);
+  assert.equal(data.budget.amount-everydayExpenses(data,'ARS',month).reduce((sum,e)=>sum+e.amount,0),data.budget.amount);
   assert.deepEqual(data.accounts.map(a=>accountBalance(data,a.id)),balances);
 });
 
@@ -97,22 +104,17 @@ test('using ARS from a giro for a real personal expense counts only that expense
   assert.equal(giroMonthlyBalance(data,month).profitArs,10_000);
 });
 
-test('destination of collected ARS is optional, partial and never creates a movement',()=>{
+test('salary and personal purchase affect goals and budget without counting giro profit twice',()=>{
   const {data,giro}=example();
-  const before=data.accounts.map(a=>accountBalance(data,a.id));
   giro.giroProfit=10_000;
-  assert.deepEqual(data.accounts.map(a=>accountBalance(data,a.id)),before);
-  assert.equal(incomeAmount(data,'ARS',month,'available'),0);
-  const plans=[{giroId:giro.id,purpose:'recover',amountArs:40_000,targetCurrency:'USDT'},{giroId:giro.id,purpose:'free',amountArs:25_000}];
-  assert.equal(validateGiroCashPlans(data,giro,plans),null);
-  data.giroCashPlans=plans;
-  assert.equal(giroMonthlyBalance(data,month).unclassifiedArs,35_000);
-  assert.equal(giroMonthlyBalance(data,month).cash.find(x=>x.purpose==='free').amountArs,25_000);
-  assert.deepEqual(data.accounts.map(a=>accountBalance(data,a.id)),before);
-  assert.equal(data.entries.length,3);
-  assert.equal(giroCapitalPending(data,giro),600);
-  assert.match(validateGiroCashPlans(data,giro,[...plans,{giroId:giro.id,purpose:'keep',amountArs:40_000}]),/supera/);
-  assert.match(validateGiroCashPlans(data,giro,[...plans,plans[0]]),/Revisá/);
-  assert.match(validateGiroCashPlans(data,giro,[{giroId:giro.id,purpose:'recover',amountArs:40_000}]),/moneda/);
-  assert.equal(availableGiroChanges(data).length,2);
+  data.entries.push({...movement('salary','income',250_000,'ARS','ARS-transferencia'),scope:'everyday'});
+  data.entries.push({...movement('groceries','expense',25_000,'ARS','ARS-transferencia'),scope:'everyday',categoryId:'comida'});
+  const goal={month,currency:'ARS',view:'available',previous:0,target:300_000,growthType:'fixed',growth:0};
+  assert.equal(incomeAmount(data,'ARS',month,'available'),250_000);
+  assert.equal(incomeGoalAmount(data,month,goal),250_000);
+  assert.equal(consolidatedIncome(data,month,'ARS','available').total,250_000);
+  assert.equal(everydayExpenses(data,'ARS',month).reduce((sum,e)=>sum+e.amount,0),25_000);
+  assert.equal(data.budget.amount-everydayExpenses(data,'ARS',month).reduce((sum,e)=>sum+e.amount,0),-25_000);
+  assert.equal(giroMonthlyBalance(data,month).profitArs,10_000);
+  assert.equal(accountBalance(data,'ARS-transferencia'),325_000);
 });
