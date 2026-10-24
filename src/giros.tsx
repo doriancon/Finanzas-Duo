@@ -2,7 +2,7 @@ import React,{useLayoutEffect,useRef,useState} from 'react';
 import {ArrowRight,ChevronLeft,ChevronRight,Plus} from 'lucide-react';
 import {accountBalance,CURRENCIES,Currency,dateISO,Entry,FinanceData,formatMoney,monthKey,monthLabel,roundMoney,shiftMonth} from './domain';
 import {Empty,SheetFrame,sortedEntries} from './ui';
-import {formatGiroMoneyInput,giroInputCaret,parseGiroMoneyInput,validGiroMoneyInput} from './giro-money';
+import {formatGiroMoneyEdit,formatGiroMoneyInput,giroMoneyInputError,parseGiroMoneyInput} from './giro-money';
 
 const today=new Date();
 const receivedCurrency=(data:FinanceData,e:Entry)=>data.accounts.find(a=>a.id===e.toAccountId)?.currency||e.currency;
@@ -17,18 +17,14 @@ function GiroMoneyField({value,onChange,currency,required=false,placeholder}:{va
     nextCaret.current=null;
   },[value]);
   const change=(event:React.ChangeEvent<HTMLInputElement>)=>{
-    let raw=event.currentTarget.value;
+    const raw=event.currentTarget.value;
     const position=event.currentTarget.selectionStart??raw.length;
-    if((event.nativeEvent as InputEvent).data==='.'&&raw[position-1]==='.')
-      raw=`${raw.slice(0,position-1)},${raw.slice(position)}`;
-    const formatted=formatGiroMoneyInput(raw,currency);
-    if(formatted===null){event.currentTarget.value=value;event.currentTarget.setSelectionRange(Math.min(position,value.length),Math.min(position,value.length));return}
-    const decimalDot=!raw.includes(',')&&raw.includes('.')&&!raw.split('.').slice(1).every(group=>group.length===3)?raw.lastIndexOf('.'): -1;
-    const significant=[...raw.slice(0,position)].filter(char=>/\d|,/.test(char)).length+(decimalDot>=0&&position>decimalDot?1:0);
-    const caret=giroInputCaret(formatted,significant);
-    if(formatted===value){event.currentTarget.value=value;event.currentTarget.setSelectionRange(caret,caret);return}
-    nextCaret.current=caret;
-    onChange(formatted);
+    const native=event.nativeEvent as InputEvent;
+    const edit=formatGiroMoneyEdit(raw,position,value,currency,native.inputType,native.data||'');
+    if(!edit){event.currentTarget.value=value;event.currentTarget.setSelectionRange(Math.min(position,value.length),Math.min(position,value.length));return}
+    if(edit.value===value){event.currentTarget.value=value;event.currentTarget.setSelectionRange(edit.caret,edit.caret);return}
+    nextCaret.current=edit.caret;
+    onChange(edit.value);
   };
   return <input ref={input} className="giro-money-input" type="text" inputMode="decimal" autoComplete="off" value={value} onChange={change} required={required} placeholder={placeholder}/>;
 }
@@ -49,7 +45,7 @@ export function GiroSheet({data,entry,onClose,onSave}:{data:FinanceData;entry?:E
   const moneyCurrency=to?.currency||'ARS';
   const price=parseGiroMoneyInput(received),given=parseGiroMoneyInput(amount);
   const profit=profitInput.trim()===''?undefined:parseGiroMoneyInput(profitInput);
-  const save=async(event:React.FormEvent)=>{event.preventDefault();setError('');if(!from||!to)return setError('Elegí las cuentas del giro.');if(!validGiroMoneyInput(received,to.currency)||!validGiroMoneyInput(amount,from.currency)||profitInput!==''&&!validGiroMoneyInput(profitInput,profitCurrency,true))return setError('Revisá los importes y los decimales permitidos para cada moneda.');const result=await onSave({id:entry?.id||draftId,kind:'giro',scope:'giro',amount:given,currency:from.currency,accountId:from.id,toAccountId:to.id,received:price,giroReference:reference.trim()||undefined,giroProfit:profit,giroProfitCurrency:profit===undefined?undefined:profitCurrency,description:description.trim()||`Giro ${from.currency} → ${to.currency}`,date});if(result)setError(result)};
+  const save=async(event:React.FormEvent)=>{event.preventDefault();setError('');if(!from||!to)return setError('Elegí las cuentas del giro.');const moneyError=giroMoneyInputError(received,to.currency);if(moneyError)return setError(`Total cobrado: ${moneyError}`);const amountError=giroMoneyInputError(amount,from.currency);if(amountError)return setError(`Monto entregado: ${amountError}`);if(profitInput!==''){const profitError=giroMoneyInputError(profitInput,profitCurrency,true);if(profitError)return setError(`Ganancia incluida: ${profitError}`)}const result=await onSave({id:entry?.id||draftId,kind:'giro',scope:'giro',amount:given,currency:from.currency,accountId:from.id,toAccountId:to.id,received:price,giroReference:reference.trim()||undefined,giroProfit:profit,giroProfitCurrency:profit===undefined?undefined:profitCurrency,description:description.trim()||`Giro ${from.currency} → ${to.currency}`,date});if(result)setError(result)};
   return <SheetFrame title={entry?'Editar giro':'Nuevo giro'} onClose={onClose}><form className="giro-form" onSubmit={save}>
     <div className="giro-form-section"><strong>Datos del giro</strong><label>Referencia o cliente (opcional)<input value={reference} onChange={e=>setReference(e.target.value)} placeholder="Ej. Giro de Ana"/></label><label>Descripción (opcional)<input value={description} onChange={e=>setDescription(e.target.value)} placeholder="¿Para qué fue?"/></label><label>Fecha<input type="date" value={date} onChange={e=>setDate(e.target.value)} required/></label></div>
     <div className="giro-form-section"><strong>Dinero que recibí</strong><label>Cuenta receptora<select value={toId} onChange={e=>setToId(e.target.value)}>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.currency} · {a.name}</option>)}</select></label><label>Total cobrado · {to?.currency}<GiroMoneyField value={received} onChange={setReceived} currency={moneyCurrency} required/></label></div>
