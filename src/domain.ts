@@ -31,11 +31,16 @@ export type Entry = {
   date: string;
   createdAt?: string;
 };
+export type GiroLink = { id: string; giroId: string; transferId: string; fromAmount: number; toAmount: number };
+export type GiroResult = { giroId: string; costArs: number; feesArs: number; profitArs: number; evidence: string; confirmedAt: string; recognizedMonth: string };
 export type IncomeGoal = { month: string; currency: Currency; view: IncomeView; previous: number; target: number; growthType: 'percent' | 'fixed'; growth: number; includeConverted?: boolean; rates?: Partial<Record<Currency,number>>; baselineManual?: boolean };
 export type IncomeQuote = { id:string; month:string; from:Currency; to:Currency; rate:number; date:string };
 export type FinanceData = {
   accounts: Account[];
   entries: Entry[];
+  giroLinks: GiroLink[];
+  giroResults: GiroResult[];
+  giroAccountingReady?: boolean;
   businessOpening: Partial<Record<Currency,number>>;
   categories: Category[];
   incomeSources: IncomeSource[];
@@ -108,8 +113,7 @@ export function businessEntries(data: FinanceData, currency: Currency, month: st
 
 export function incomeAmount(data: FinanceData, currency: Currency, month: string, view: IncomeView): number {
   const ordinary=data.entries.filter(e => e.currency === currency && inMonth(e, month) && e.kind === 'income' && (view === 'combined' || (view === 'business' ? e.scope === 'business' : e.scope === 'everyday'))).reduce((sum, e) => sum + e.amount, 0);
-  const giroGain=view==='business'?0:data.entries.filter(e=>e.kind==='giro'&&inMonth(e,month)&&(e.giroProfitCurrency||data.accounts.find(a=>a.id===e.toAccountId)?.currency)===currency).reduce((sum,e)=>sum+(e.giroProfit||0),0);
-  return roundMoney(ordinary+giroGain,currency);
+  return roundMoney(ordinary,currency);
 }
 
 export function businessBalance(data:FinanceData,currency:Currency):number|null {

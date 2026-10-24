@@ -117,8 +117,8 @@ test('a giro updates both general accounts once and leaves the household budget 
   assert.equal(accountBalance(data,'bob-transfer'),700);
   assert.equal(accountBalance(data,'ars-transfer'),50_000);
   assert.equal(everydayExpenses(data,'ARS',month).length,0);
-  assert.equal(incomeAmount(data,'ARS',month,'available'),7_000);
-  assert.equal(incomeAmount(data,'ARS',month,'combined'),7_000);
+  assert.equal(incomeAmount(data,'ARS',month,'available'),0);
+  assert.equal(incomeAmount(data,'ARS',month,'combined'),0);
   assert.equal(accountBalance(data,'ars-transfer'),50_000);
   data.entries=[];
   assert.equal(accountBalance(data,'bob-transfer'),1000);
@@ -157,7 +157,7 @@ test('loading older giros removes cost and growth options without losing the lin
   old.entries=[entry('old-giro','giro',300,'giro',{currency:'BOB',accountId:'bob-transfer',toAccountId:'ars-transfer',received:50_000,giroCost:43_000,giroProfit:7_000,giroProfitAsIncome:true})];
   const previous=globalThis.localStorage;
   globalThis.localStorage={getItem:key=>key==='duo-v3-data-personal'?JSON.stringify(old):null};
-  try{const loaded=loadData();assert.equal(loaded.entries[0].giroCost,undefined);assert.equal(loaded.entries[0].giroProfitAsIncome,undefined);assert.equal(loaded.entries[0].giroProfit,7000);assert.equal(accountBalance(loaded,'BOB-transferencia'),700);assert.equal(incomeAmount(loaded,'ARS',month,'available'),7000)}finally{globalThis.localStorage=previous}
+  try{const loaded=loadData();assert.equal(loaded.entries[0].giroCost,undefined);assert.equal(loaded.entries[0].giroProfitAsIncome,undefined);assert.equal(loaded.entries[0].giroProfit,7000);assert.equal(accountBalance(loaded,'BOB-transferencia'),700);assert.equal(incomeAmount(loaded,'ARS',month,'available'),0)}finally{globalThis.localStorage=previous}
 });
 
 test('editing and deleting a household expense update the same ledger once',()=>{
@@ -191,12 +191,12 @@ test('legacy demo migration keeps custom records but removes the sample ledger',
   try{const loaded=loadData();assert.deepEqual(loaded.entries.map(e=>e.id),['my-expense']);assert.equal(loaded.budget.amount,0);assert.equal(loaded.accounts.find(a=>a.id==='ARS-transferencia').opening,0)}finally{globalThis.localStorage=previous}
 });
 
-test('giro gain in another currency is reported without inventing a conversion',()=>{
+test('an estimated giro gain in another currency stays separate from personal income',()=>{
   const data=base();data.accounts.push({id:'bob-transfer',currency:'BOB',method:'Transferencia',name:'Transferencia',opening:1000});
   const giro=entry('other-currency','giro',300,'giro',{currency:'BOB',accountId:'bob-transfer',toAccountId:'ars-transfer',received:50_000,giroProfit:10,giroProfitCurrency:'USD'});
   assert.equal(canApplyEntry(data,giro),null);
   data.entries=[giro];
-  assert.equal(incomeAmount(data,'USD',month,'available'),10);
+  assert.equal(incomeAmount(data,'USD',month,'available'),0);
   assert.equal(incomeAmount(data,'ARS',month,'available'),0);
   assert.equal(accountBalance(data,'ars-transfer'),1_050_000);
 });

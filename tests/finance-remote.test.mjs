@@ -52,6 +52,7 @@ test('shared rows reconstruct FinanceData and retain all paginated movements', a
     finance_entries: ledger,
     finance_categories: [], finance_income_sources: [], finance_funds: [], finance_budgets: [],
     finance_business_openings: [], finance_income_goals: [], finance_income_quotes: [],
+    finance_giro_links: [], finance_giro_results: [],
   };
   const orderCalls = [];
   const client = { from(table) { return { select() { return { eq() { return { order(column, options) { orderCalls.push({table,column,ascending:options.ascending}); return this; }, async range(start, end) {
@@ -88,4 +89,16 @@ test('simultaneous movement submissions use transactional RPCs with independent 
   await persistFinanceChange(client, 'shared', before, first);
   const retries = calls.filter(call => call.action === 'rpc' && call.name === 'apply_finance_entry' && call.args.p_entry.id === 'first');
   assert.equal(retries[0].args.p_request_id, retries[1].args.p_request_id);
+});
+
+test('existing shared finance data still loads before the giro migration is applied', async () => {
+  const client={from(table){return {select(){return {eq(){return {order(){return this},async range(){
+    return table.startsWith('finance_giro_')
+      ? {data:null,error:{message:`Could not find the table 'public.${table}' in the schema cache`}}
+      : {data:[],error:null};
+  }}}}}}}};
+  const data=await loadFinanceSpace(client,'shared');
+  assert.equal(data.giroAccountingReady,false);
+  assert.deepEqual(data.giroLinks,[]);
+  assert.deepEqual(data.giroResults,[]);
 });

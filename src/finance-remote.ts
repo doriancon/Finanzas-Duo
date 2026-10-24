@@ -1,13 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Account, Category, Currency, Entry, FinanceData, Goal, IncomeGoal, IncomeQuote, IncomeSource, Pasanaco } from './domain.ts';
+import type { Account, Category, Currency, Entry, FinanceData, GiroLink, GiroResult, Goal, IncomeGoal, IncomeQuote, IncomeSource, Pasanaco } from './domain.ts';
 import { emptyData } from './data.ts';
 
 type Row = Record<string, any>;
 type Table = 'finance_accounts' | 'finance_categories' | 'finance_income_sources' | 'finance_funds' |
-  'finance_budgets' | 'finance_business_openings' | 'finance_income_goals' | 'finance_income_quotes' | 'finance_entries';
+  'finance_budgets' | 'finance_business_openings' | 'finance_income_goals' | 'finance_income_quotes' | 'finance_entries' | 'finance_giro_links' | 'finance_giro_results';
 
 const tables: Table[] = ['finance_accounts', 'finance_categories', 'finance_income_sources', 'finance_funds',
   'finance_budgets', 'finance_business_openings', 'finance_income_goals', 'finance_income_quotes', 'finance_entries'];
+let giroSchemaUnavailable=false;
 const number = (value: unknown) => Number(value ?? 0);
 const checked = ({ error }: { error: { message: string } | null }) => { if (error) throw new Error(error.message); };
 const requestIds = new Map<string, string>();
@@ -53,7 +54,16 @@ export async function loadFinanceSpace(client: SupabaseClient, spaceId: string):
     }
   };
   const [accounts, categories, sources, funds, budgets, openings, goals, quotes, entries] = await Promise.all(tables.map(fetchAll));
+  const optional = async (table:Table) => {
+    if(giroSchemaUnavailable)return {rows:[] as Row[],ready:false};
+    try { return {rows:await fetchAll(table),ready:true}; }
+    catch(error){if(/could not find the table|does not exist|relation .* does not exist/i.test(String(error))){giroSchemaUnavailable=true;return {rows:[] as Row[],ready:false}}throw error;}
+  };
+  const [links,results]=await Promise.all([optional('finance_giro_links'),optional('finance_giro_results')]);
   const data = emptyData();
+  data.giroAccountingReady=links.ready&&results.ready;
+  data.giroLinks=links.rows.map(row=>({id:row.id,giroId:row.giro_id,transferId:row.transfer_id,fromAmount:number(row.from_amount),toAmount:number(row.to_amount)} as GiroLink));
+  data.giroResults=results.rows.map(row=>({giroId:row.giro_id,costArs:number(row.cost_ars),feesArs:number(row.fees_ars),profitArs:number(row.profit_ars),evidence:row.evidence,confirmedAt:row.confirmed_at,recognizedMonth:row.recognized_month} as GiroResult));
   data.accounts = accounts.map(a => ({ id: a.id, currency: a.currency, method: a.method, name: a.name, opening: number(a.opening) } as Account));
   data.categories = categories.map(c => ({ id: c.id, name: c.name, color: c.color, icon: c.icon, archived: c.archived } as Category));
   data.incomeSources = sources.map(s => ({ id: s.id, name: s.name, archived: s.archived } as IncomeSource));
@@ -104,6 +114,10 @@ export async function persistFinanceChange(client: SupabaseClient, spaceId: stri
     [...after.goals, ...(after.pasanaco ? [after.pasanaco] : [])]);
   const quotes = differences(before.incomeQuotes, after.incomeQuotes);
   const entries = differences(before.entries, after.entries);
+  const links = differences(before.giroLinks||[],after.giroLinks||[]);
+  const results = differences((before.giroResults||[]).map(r=>({...r,id:r.giroId})),(after.giroResults||[]).map(r=>({...r,id:r.giroId})));
+  if((links.changed.length||links.removed.length||results.changed.length||results.removed.length)&&!before.giroAccountingReady)
+    throw new Error('Primero hay que aplicar la migración local preparada para vincular giros.');
 
   await upsert(client, 'finance_categories', categories.changed.map(c => ({ space_id: spaceId, ...c })));
   await upsert(client, 'finance_income_sources', sources.changed.map(s => ({ space_id: spaceId, ...s })));
@@ -129,6 +143,11 @@ export async function persistFinanceChange(client: SupabaseClient, spaceId: stri
     checked(await client.rpc('delete_finance_entry', { p_space_id: spaceId, p_entry_id: entry.id,
       p_request_id: requestIdFor(spaceId, 'delete', entry) }));
   }
+  for(const link of links.removed)await remove(client,'finance_giro_links',spaceId,link.id);
+  for(const link of links.changed)await upsert(client,'finance_giro_links',[{space_id:spaceId,id:link.id,giro_id:link.giroId,transfer_id:link.transferId,from_amount:link.fromAmount,to_amount:link.toAmount}]);
+  if(results.removed.length||results.changed.some(result=>before.giroResults.some(old=>old.giroId===result.giroId)))
+    throw new Error('Una ganancia confirmada es histórica y no se puede editar ni eliminar.');
+  for(const result of results.changed)checked(await client.from('finance_giro_results').insert({space_id:spaceId,giro_id:result.giroId,cost_ars:result.costArs,fees_ars:result.feesArs,evidence:result.evidence}));
   for (const item of funds.removed) await remove(client, 'finance_funds', spaceId, item.id);
   for (const item of categories.removed) await remove(client, 'finance_categories', spaceId, item.id);
   for (const item of sources.removed) await remove(client, 'finance_income_sources', spaceId, item.id);
