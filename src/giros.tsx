@@ -6,7 +6,8 @@ import {Empty,SheetFrame,sortedEntries} from './ui';
 const today=new Date();
 const receivedCurrency=(data:FinanceData,e:Entry)=>data.accounts.find(a=>a.id===e.toAccountId)?.currency||e.currency;
 
-export function GiroSheet({data,entry,onClose,onSave}:{data:FinanceData;entry?:Entry|null;onClose:()=>void;onSave:(entry:Entry)=>string|null}) {
+export function GiroSheet({data,entry,onClose,onSave}:{data:FinanceData;entry?:Entry|null;onClose:()=>void;onSave:(entry:Entry)=>Promise<string|null>}) {
+  const [draftId]=useState(()=>crypto.randomUUID());
   const [fromId,setFromId]=useState(entry?.accountId||'BOB-transferencia');
   const [toId,setToId]=useState(entry?.toAccountId||'ARS-transferencia');
   const [amount,setAmount]=useState(entry?String(entry.amount):'');
@@ -21,7 +22,7 @@ export function GiroSheet({data,entry,onClose,onSave}:{data:FinanceData;entry?:E
   const moneyCurrency=to?.currency||'ARS';
   const price=roundMoney(Number(received),moneyCurrency),given=roundMoney(Number(amount),from?.currency||'BOB');
   const profit=profitInput.trim()===''?undefined:roundMoney(Number(profitInput),profitCurrency);
-  const save=(event:React.FormEvent)=>{event.preventDefault();setError('');if(!from||!to)return setError('Elegí las cuentas del giro.');const result=onSave({id:entry?.id||crypto.randomUUID(),kind:'giro',scope:'giro',amount:given,currency:from.currency,accountId:from.id,toAccountId:to.id,received:price,giroReference:reference.trim()||undefined,giroProfit:profit,giroProfitCurrency:profit===undefined?undefined:profitCurrency,description:description.trim()||`Giro ${from.currency} → ${to.currency}`,date});if(result)setError(result)};
+  const save=async(event:React.FormEvent)=>{event.preventDefault();setError('');if(!from||!to)return setError('Elegí las cuentas del giro.');const result=await onSave({id:entry?.id||draftId,kind:'giro',scope:'giro',amount:given,currency:from.currency,accountId:from.id,toAccountId:to.id,received:price,giroReference:reference.trim()||undefined,giroProfit:profit,giroProfitCurrency:profit===undefined?undefined:profitCurrency,description:description.trim()||`Giro ${from.currency} → ${to.currency}`,date});if(result)setError(result)};
   return <SheetFrame title={entry?'Editar giro':'Nuevo giro'} onClose={onClose}><form className="giro-form" onSubmit={save}>
     <div className="giro-form-section"><strong>Datos del giro</strong><label>Referencia o cliente (opcional)<input value={reference} onChange={e=>setReference(e.target.value)} placeholder="Ej. Giro de Ana"/></label><label>Descripción (opcional)<input value={description} onChange={e=>setDescription(e.target.value)} placeholder="¿Para qué fue?"/></label><label>Fecha<input type="date" value={date} onChange={e=>setDate(e.target.value)} required/></label></div>
     <div className="giro-form-section"><strong>Dinero que recibí</strong><label>Cuenta receptora<select value={toId} onChange={e=>setToId(e.target.value)}>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.currency} · {a.name}</option>)}</select></label><label>Total cobrado · {to?.currency}<input type="number" inputMode="decimal" min="0.000001" step="any" value={received} onChange={e=>setReceived(e.target.value)} required/></label></div>

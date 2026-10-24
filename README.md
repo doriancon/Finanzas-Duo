@@ -15,6 +15,14 @@ Abrí la dirección que muestra Vite, normalmente [http://localhost:5173/](http:
 
 La aplicación comienza sin movimientos ficticios. Los datos se guardan en `localStorage` **solo en este navegador y dispositivo**. No existe todavía una base de datos compartida, autenticación, sincronización entre dispositivos ni conexión bancaria. Conviene conservar una copia del perfil del navegador antes de borrar sus datos. La migración lee los datos personales anteriores y conserva los registros originales en sus claves previas como respaldo técnico; la aplicación activa no tiene papelera.
 
+### Respaldo JSON
+
+En la parte inferior del menú lateral, elegí **Descargar respaldo**. En un teléfono, abrí primero el menú. Se descargará un archivo `duo-finance-respaldo-*.json` con una copia completa del objeto `FinanceData` guardado bajo `duo-v4-data`: cuentas, movimientos (también giros), categorías, fuentes, metas, Pasanaco, presupuesto, Lencería y cotizaciones.
+
+Para verificarlo, abrí el archivo con un editor de texto y comprobá que tiene `format: "duo-finance-backup"`, `version: 1` y una sección `data` con `accounts`, `entries`, `categories`, `goals`, `pasanaco`, `budget`, `businessOpening`, `incomeGoals` e `incomeQuotes`. Compará la cantidad de elementos en `data.entries` con la cantidad de movimientos de la aplicación. Guardá el archivo en un lugar privado: contiene información financiera.
+
+El formato está versionado y `src/backup.ts` incluye un validador de lectura para una futura restauración. La aplicación todavía no importa respaldos ni modifica los datos existentes al descargarlos.
+
 ARS y BOB tienen Efectivo y Transferencia; USD solo Efectivo; USDT solo Billetera. Los saldos iniciales se configuran en **Administrar cuentas**. Todas las entradas y salidas, incluidas Lencería y Giros, afectan esas cuentas generales. Mover dinero usa los dos importes indicados y no crea ingreso ni gasto. Los aportes y retiros de Ahorros modifican la cuenta y el fondo sin contarse como consumo.
 
 **Presupuesto** y los gráficos de gastos cotidianos usan únicamente gastos clasificados como Vida cotidiana. **Lencería** muestra un saldo atribuido con saldo inicial configurable, gastos por categoría y movimientos propios; el indicador no es una billetera. Los aportes a Ahorros pueden clasificarse como Lencería para que el saldo atribuido también refleje esa reserva, sin crear un gasto doméstico. Los cobros del negocio no se toman como utilidad personal. La antigua asignación interna ya no se crea ni cuenta como ingreso.

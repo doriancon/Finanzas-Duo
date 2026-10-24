@@ -8,6 +8,7 @@ dist/
 .env.*
 !.env.example
 !.env.*.example
+supabase/.temp/
 
 # Logs and temporary files
 *.log
