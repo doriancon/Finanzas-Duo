@@ -26,13 +26,15 @@ const checked=(result)=>{if(result.error)throw new Error(result.error.message);r
 
 export async function deliverExpenseEvent(client,eventId,sendNotification){
   const event=checked(await client.from('finance_push_events').select('*').eq('id',eventId).maybeSingle());
-  if(!event)return {sent:0,skipped:0,failed:0};
+  // Si falta la autoría, no podemos garantizar que el autor quede excluido.
+  if(!event?.actor_user_id)return {sent:0,skipped:0,failed:0};
   const subscriptions=checked(await client.from('finance_push_subscriptions')
-    .select('id,endpoint,p256dh,auth_key,created_at').eq('space_id',event.space_id)
+    .select('id,user_id,endpoint,p256dh,auth_key,created_at').eq('space_id',event.space_id)
     .lte('created_at',event.created_at));
   const payload=expensePushPayload(event);
   const result={sent:0,skipped:0,failed:0};
   for(const subscription of subscriptions){
+    if(!subscription.user_id||subscription.user_id===event.actor_user_id)continue;
     const claim=await client.from('finance_push_deliveries').insert({
       event_id:event.id,subscription_id:subscription.id,
     });

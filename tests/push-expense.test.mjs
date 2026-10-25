@@ -4,17 +4,17 @@ import handler from '../api/push-expense.mjs';
 import {allowedPushEndpoint,deliverExpenseEvent,expensePushPayload} from '../server/push-expense.mjs';
 
 const event={id:'11111111-1111-4111-8111-111111111111',space_id:'space-a',entry_id:'expense-1',
-  actor_name:'Dani',amount:25_000,currency:'ARS',category_name:'Supermercado',created_at:'2026-10-24T12:00:00Z'};
+  actor_user_id:'user-dani',actor_name:'Dani',amount:25_000,currency:'ARS',category_name:'Supermercado',created_at:'2026-10-24T12:00:00Z'};
 const endpoint='https://fcm.googleapis.com/fcm/send/test-subscription';
 
-function fakeClient(subscriptions){
+function fakeClient(subscriptions,eventRow=event){
   const claims=new Set();
   const rows=[...subscriptions];
   const calls=[];
   const from=table=>({
     select(){return {
       eq(column,value){
-        if(table==='finance_push_events')return {maybeSingle:async()=>({data:value===event.id?event:null,error:null})};
+        if(table==='finance_push_events')return {maybeSingle:async()=>({data:value===eventRow.id?eventRow:null,error:null})};
         if(table==='finance_push_subscriptions')return {
           lte:async(_,date)=>({data:rows.filter(row=>row.space_id===value&&row.created_at<=date),error:null}),
         };
@@ -56,9 +56,9 @@ test('push endpoints must use known HTTPS browser push providers',()=>{
 
 test('webhook retries never resend to a device and subscribers from other spaces are excluded',async()=>{
   const fixture=fakeClient([
-    {id:'device-a',space_id:'space-a',endpoint,p256dh:'p',auth_key:'a',created_at:'2026-10-23T12:00:00Z'},
-    {id:'device-other',space_id:'space-b',endpoint:'https://web.push.apple.com/x',p256dh:'p',auth_key:'a',created_at:'2026-10-23T12:00:00Z'},
-    {id:'device-later',space_id:'space-a',endpoint:'https://web.push.apple.com/y',p256dh:'p',auth_key:'a',created_at:'2026-10-25T12:00:00Z'},
+    {id:'device-a',space_id:'space-a',user_id:'user-dorian',endpoint,p256dh:'p',auth_key:'a',created_at:'2026-10-23T12:00:00Z'},
+    {id:'device-other',space_id:'space-b',user_id:'user-other',endpoint:'https://web.push.apple.com/x',p256dh:'p',auth_key:'a',created_at:'2026-10-23T12:00:00Z'},
+    {id:'device-later',space_id:'space-a',user_id:'user-dorian',endpoint:'https://web.push.apple.com/y',p256dh:'p',auth_key:'a',created_at:'2026-10-25T12:00:00Z'},
   ]);
   const sent=[];
   const send=async(subscription,payload)=>{sent.push({subscription,payload})};
@@ -69,10 +69,40 @@ test('webhook retries never resend to a device and subscribers from other spaces
   assert.equal(fixture.claims.size,1);
 });
 
+test('only other members receive a personal expense, including on several devices',async()=>{
+  for(const actorId of ['user-dani','user-dorian']){
+    const otherId=actorId==='user-dani'?'user-dorian':'user-dani';
+    const fixture=fakeClient([
+      {id:'author-iphone',space_id:'space-a',user_id:actorId,endpoint:'https://web.push.apple.com/author',created_at:'2026-10-23T12:00:00Z'},
+      {id:'author-chrome',space_id:'space-a',user_id:actorId,endpoint:'https://fcm.googleapis.com/author',created_at:'2026-10-23T12:00:00Z'},
+      {id:'other-iphone',space_id:'space-a',user_id:otherId,endpoint:'https://web.push.apple.com/other',p256dh:'p',auth_key:'a',created_at:'2026-10-23T12:00:00Z'},
+      {id:'other-chrome',space_id:'space-a',user_id:otherId,endpoint:'https://fcm.googleapis.com/other',p256dh:'p',auth_key:'a',created_at:'2026-10-23T12:00:00Z'},
+      {id:'third-member',space_id:'space-a',user_id:'user-third',endpoint:'https://web.push.apple.com/third',p256dh:'p',auth_key:'a',created_at:'2026-10-23T12:00:00Z'},
+      {id:'another-space',space_id:'space-b',user_id:'user-fourth',endpoint:'https://web.push.apple.com/fourth',created_at:'2026-10-23T12:00:00Z'},
+    ],{...event,actor_user_id:actorId,actor_name:'Dani'});
+    const sent=[];
+    const send=async subscription=>{sent.push(subscription.endpoint)};
+    assert.deepEqual(await deliverExpenseEvent(fixture.client,event.id,send),{sent:3,skipped:0,failed:0});
+    assert.deepEqual(await deliverExpenseEvent(fixture.client,event.id,send),{sent:0,skipped:3,failed:0});
+    assert.equal(sent.length,3);
+    assert.deepEqual(fixture.calls.filter(call=>call.action==='insert').map(call=>call.row.subscription_id),
+      ['other-iphone','other-chrome','third-member']);
+  }
+});
+
+test('an event without an author id does not send or claim notifications',async()=>{
+  const fixture=fakeClient([{id:'device',space_id:'space-a',user_id:'user-dorian',endpoint,
+    p256dh:'p',auth_key:'a',created_at:'2026-10-23T12:00:00Z'}],{...event,actor_user_id:null});
+  let sent=0;
+  assert.deepEqual(await deliverExpenseEvent(fixture.client,event.id,async()=>{sent++}),{sent:0,skipped:0,failed:0});
+  assert.equal(sent,0);
+  assert.equal(fixture.claims.size,0);
+});
+
 test('invalid or expired endpoints are not retried and expired subscriptions are removed',async()=>{
   const fixture=fakeClient([
-    {id:'invalid',space_id:'space-a',endpoint:'https://internal.test/x',p256dh:'p',auth_key:'a',created_at:'2026-10-23T12:00:00Z'},
-    {id:'expired',space_id:'space-a',endpoint,p256dh:'p',auth_key:'a',created_at:'2026-10-23T12:00:00Z'},
+    {id:'invalid',space_id:'space-a',user_id:'user-dorian',endpoint:'https://internal.test/x',p256dh:'p',auth_key:'a',created_at:'2026-10-23T12:00:00Z'},
+    {id:'expired',space_id:'space-a',user_id:'user-dorian',endpoint,p256dh:'p',auth_key:'a',created_at:'2026-10-23T12:00:00Z'},
   ]);
   let attempts=0;
   const send=async()=>{attempts++;throw {statusCode:410}};
