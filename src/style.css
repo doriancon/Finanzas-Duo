@@ -94,3 +94,24 @@
   .giro-form{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
   .giro-form-actions{position:sticky;bottom:0;background:#fff;padding:10px 0 calc(4px + env(safe-area-inset-bottom));z-index:1}
 }
+
+/* Navegación móvil integrada al borde y al área segura del dispositivo. */
+@media(max-width:900px){
+  .app-shell{min-height:100dvh}
+  .bottom-nav{
+    left:0;right:0;bottom:0;transform:none;width:100%;height:calc(64px + env(safe-area-inset-bottom));
+    border-radius:0;box-shadow:0 -1px 0 #ffffff18;
+    justify-content:stretch;padding:4px max(6px,env(safe-area-inset-left)) calc(4px + env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-right));
+  }
+  .bottom-nav button{flex:1;min-width:0;min-height:48px;justify-content:center;gap:4px;padding:5px 2px;border-radius:10px;color:#b5aabe;font-size:10px}
+  .bottom-nav button svg{width:20px;height:20px}
+  .bottom-nav button.active{background:#3b3048;color:#fff;border-radius:10px}
+  .floating-add{bottom:calc(76px + env(safe-area-inset-bottom));right:17px;min-width:50px;min-height:50px}
+  .content{padding-bottom:calc(155px + env(safe-area-inset-bottom))}
+}
+@media(max-width:650px){
+  .bottom-nav{width:100%;bottom:0}
+  .floating-add{bottom:calc(76px + env(safe-area-inset-bottom))}
+  .content{padding-bottom:calc(155px + env(safe-area-inset-bottom))}
+}
+@media(max-width:375px){.bottom-nav button span{font-size:10px}}
