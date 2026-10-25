@@ -63,6 +63,7 @@
 .giro-form-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .giro-form-actions .small-add{justify-content:center;min-height:45px}
 .giro-form-actions .form-submit{margin-top:0}
+.push-settings{margin-top:18px;display:grid;justify-items:start;gap:12px}.push-settings .section-head{width:100%}.push-settings label{display:grid;gap:7px;color:#5c5368;font-size:12px;font-weight:700}.push-settings select{min-width:190px;border:1px solid #e8dff2;border-radius:10px;background:#fff;padding:10px}.push-settings .form-hint{margin:0}
 @media(max-width:650px){
   .giro-title-actions{flex-direction:column;align-items:stretch;gap:15px}
   .giro-title-actions .primary-button{display:inline-flex;width:100%}
