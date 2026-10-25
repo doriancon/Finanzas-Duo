@@ -1,10 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { acceptFinanceInvite, findFinanceSpace } from './finance-remote';
 import { supabase, supabaseConfigured, TEST_PROJECT_REF } from './supabase';
-import { downloadFinanceBackup } from './backup';
 
 export type SharedSpace = { id: string; role: 'owner' | 'member' };
+
+export function LoadingScreen() {
+  return <div className="loading-screen" role="status" aria-label="Cargando Duo Finance">
+    <img className="loading-logo" src="/dyd-192.png" width="144" height="144" alt="Duo Finance" />
+    <span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>
+  </div>;
+}
+
+async function findFinanceSpace(userId: string): Promise<SharedSpace | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('finance_space_members')
+    .select('space_id,role').eq('user_id', userId).maybeSingle();
+  if (error) throw error;
+  return data ? { id: data.space_id, role: data.role } : null;
+}
 
 export function AuthRoot({ children }: { children: (space: SharedSpace | null, email: string | null) => React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -25,18 +38,21 @@ export function AuthRoot({ children }: { children: (space: SharedSpace | null, e
       setReady(false);
       setError('');
       if (!current) { setReady(true); return; }
+      // Descarga la interfaz mientras se comprueba la pertenencia al espacio.
+      void import('./main').catch(() => {});
       // Supabase recomienda diferir las consultas desde onAuthStateChange.
       setTimeout(() => {
-        void findFinanceSpace(client, current.user.id)
+        if (!active || authUserId.current !== current.user.id) return;
+        void findFinanceSpace(current.user.id)
           .then(found => { if (active && authUserId.current === current.user.id) { setSpace(found); setReady(true); } })
           .catch(cause => { if (active && authUserId.current === current.user.id) { setError(String(cause)); setReady(true); } });
       }, 0);
     });
-    return () => { active = false; listener.subscription.unsubscribe(); };
+    return () => { active = false; authUserId.current = null; listener.subscription.unsubscribe(); };
   }, []);
 
   if (!supabaseConfigured) return children(null, null);
-  if (!ready) return <div className="auth-page"><div className="auth-card"><strong>duo.</strong><p>Abriendo el espacio compartido…</p></div></div>;
+  if (!ready) return <LoadingScreen />;
   if (error) return <div className="auth-page"><div className="auth-card"><h1>No se pudo abrir el espacio</h1><p role="alert">{error}</p><button onClick={() => location.reload()}>Reintentar</button></div></div>;
   if (!session) return <AuthForm />;
   if (!space) return <SpaceSetup onReady={setSpace} />;
@@ -81,6 +97,7 @@ function SpaceSetup({ onReady }: { onReady: (space: SharedSpace) => void }) {
     if (!supabase) return;
     setBusy(true); setError('');
     try {
+      const { acceptFinanceInvite } = await import('./finance-remote');
       const id = await acceptFinanceInvite(supabase, token.trim());
       history.replaceState(null, '', location.pathname);
       onReady({ id, role: 'member' });
@@ -107,8 +124,8 @@ function SpaceSetup({ onReady }: { onReady: (space: SharedSpace) => void }) {
 
 function LocalBackupButton() {
   const [message, setMessage] = useState('');
-  return <><button className="auth-switch" onClick={() => {
-    try { downloadFinanceBackup(); setMessage('Respaldo JSON descargado. Guardalo en un lugar seguro.'); }
+  return <><button className="auth-switch" onClick={() => { void (async () => {
+    try { const { downloadFinanceBackup } = await import('./backup'); downloadFinanceBackup(); setMessage('Respaldo JSON descargado. Guardalo en un lugar seguro.'); }
     catch (cause) { setMessage(cause instanceof Error ? cause.message : 'No se pudo descargar el respaldo.'); }
-  }}>Descargar respaldo local antes de continuar</button>{message && <p role="status" className="form-hint">{message}</p>}</>;
+  })(); }}>Descargar respaldo local antes de continuar</button>{message && <p role="status" className="form-hint">{message}</p>}</>;
 }
