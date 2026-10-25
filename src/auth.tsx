@@ -19,7 +19,7 @@ async function findFinanceSpace(userId: string): Promise<SharedSpace | null> {
   return data ? { id: data.space_id, role: data.role } : null;
 }
 
-export function AuthRoot({ children }: { children: (space: SharedSpace | null, email: string | null) => React.ReactNode }) {
+export function AuthRoot({ children }: { children: (space: SharedSpace | null, email: string | null, userId: string | null) => React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [space, setSpace] = useState<SharedSpace | null>(null);
   const [ready, setReady] = useState(!supabaseConfigured);
@@ -51,12 +51,12 @@ export function AuthRoot({ children }: { children: (space: SharedSpace | null, e
     return () => { active = false; authUserId.current = null; listener.subscription.unsubscribe(); };
   }, []);
 
-  if (!supabaseConfigured) return children(null, null);
+  if (!supabaseConfigured) return children(null, null, null);
   if (!ready) return <LoadingScreen />;
   if (error) return <div className="auth-page"><div className="auth-card"><h1>No se pudo abrir el espacio</h1><p role="alert">{error}</p><button onClick={() => location.reload()}>Reintentar</button></div></div>;
   if (!session) return <AuthForm />;
   if (!space) return <SpaceSetup onReady={setSpace} />;
-  return children(space, session.user.email || null);
+  return children(space, session.user.email || null, session.user.id);
 }
 
 function AuthForm() {
@@ -78,7 +78,7 @@ function AuthForm() {
   };
   return <div className="auth-page"><div className="auth-card"><strong className="auth-brand">duo<span>.</span> finance</strong>
     <h1>{mode === 'login' ? 'Entrar a nuestras finanzas' : 'Crear tu usuario'}</h1>
-    <p>Dorian y Dani usan cuentas independientes dentro del mismo espacio.</p>
+    <p>Entrá a tu espacio financiero o creá uno propio.</p>
     <form onSubmit={submit}><label>Correo electrónico<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
       <label>Contraseña<input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={6} required value={password} onChange={e => setPassword(e.target.value)} /></label>
       {message && <p role="status" className="form-hint">{message}</p>}
@@ -91,12 +91,35 @@ function AuthForm() {
 
 function SpaceSetup({ onReady }: { onReady: (space: SharedSpace) => void }) {
   const [token, setToken] = useState(new URLSearchParams(location.search).get('invite') || '');
+  const [spaceName, setSpaceName] = useState('Mis finanzas');
+  const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  useEffect(() => {
+    const client = supabase;
+    if (!client) return;
+    let active = true;
+    void client.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return;
+      const result = await client.from('finance_user_profiles').select('display_name').eq('user_id', data.user.id).maybeSingle();
+      if (active && result.data?.display_name) setDisplayName(result.data.display_name);
+    });
+    return () => { active = false; };
+  }, []);
+  const saveName = async () => {
+    const client = supabase;
+    if (!client || !displayName.trim()) throw new Error('Escribí tu nombre para continuar.');
+    const { data, error: userError } = await client.auth.getUser();
+    if (userError || !data.user) throw new Error('Iniciá sesión nuevamente.');
+    const result = await client.from('finance_user_profiles').upsert(
+      { user_id: data.user.id, display_name: displayName.trim() }, { onConflict: 'user_id' });
+    if (result.error) throw result.error;
+  };
   const join = async () => {
     if (!supabase) return;
     setBusy(true); setError('');
     try {
+      await saveName();
       const { acceptFinanceInvite } = await import('./finance-remote');
       const id = await acceptFinanceInvite(supabase, token.trim());
       history.replaceState(null, '', location.pathname);
@@ -107,16 +130,21 @@ function SpaceSetup({ onReady }: { onReady: (space: SharedSpace) => void }) {
   const create = async () => {
     if (!supabase) return;
     setBusy(true); setError('');
-    const { data, error: failure } = await supabase.rpc('create_finance_space', { p_name: 'Dorian & Dani' });
-    setBusy(false);
-    if (failure) return setError(failure.message);
-    onReady({ id: data as string, role: 'owner' });
+    try {
+      await saveName();
+      const { data, error: failure } = await supabase.rpc('create_finance_space', { p_name: spaceName.trim() });
+      if (failure) throw failure;
+      onReady({ id: data as string, role: 'owner' });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo crear el espacio.'); }
+    finally { setBusy(false); }
   };
   return <div className="auth-page"><div className="auth-card"><strong className="auth-brand">duo<span>.</span> finance</strong>
-    <h1>Elegí el espacio compartido</h1><p>Una persona crea el espacio. La otra entra con el código de invitación.</p>
-    <button className="primary-button" onClick={create} disabled={busy}>Crear espacio para Dorian y Dani</button>
+    <h1>Elegí tu espacio</h1><p>Creá un espacio independiente o unite a uno con una invitación.</p>
+    <label>Tu nombre visible<input value={displayName} maxLength={80} onChange={event => setDisplayName(event.target.value)} /></label>
+    <label>Nombre de tu espacio<input value={spaceName} maxLength={80} onChange={event => setSpaceName(event.target.value)} /></label>
+    <button className="primary-button" onClick={() => void create()} disabled={busy || !displayName.trim() || !spaceName.trim()}>Crear mi espacio</button>
     <label>Código de invitación<input value={token} onChange={e => setToken(e.target.value)} placeholder="Pegá el código recibido" /></label>
-    <button className="small-add" onClick={join} disabled={busy || !token.trim()}>Unirme al espacio</button>
+    <button className="small-add" onClick={() => void join()} disabled={busy || !token.trim() || !displayName.trim()}>Unirme con invitación</button>
     {error && <p className="form-error" role="alert">{error}</p>}
     <LocalBackupButton />
     <button className="auth-switch" onClick={() => void supabase?.auth.signOut({ scope: 'local' })}>Cerrar sesión</button></div></div>;

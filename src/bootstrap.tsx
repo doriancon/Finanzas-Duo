@@ -18,7 +18,7 @@ class AppLoadBoundary extends React.Component<{ children: React.ReactNode }, { f
 }
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode>
-  <AuthRoot>{(space, email) => <AppLoadBoundary><Suspense fallback={<LoadingScreen />}>
-    <App key={space?.id || 'local'} sharedSpace={space} email={email} />
+  <AuthRoot>{(space, email, userId) => <AppLoadBoundary><Suspense fallback={<LoadingScreen />}>
+    <App key={space?.id || 'local'} sharedSpace={space} email={email} userId={userId} />
   </Suspense></AppLoadBoundary>}</AuthRoot>
 </React.StrictMode>);

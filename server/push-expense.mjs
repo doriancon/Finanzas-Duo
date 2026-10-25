@@ -4,7 +4,8 @@ const money=(amount,currency)=>{
 };
 
 export function expensePushPayload(event){
-  const actor=['Dorian','Dani'].includes(event.actor_name)?event.actor_name:'Un miembro';
+  const actor=typeof event.actor_name==='string'&&event.actor_name.trim()
+    ? event.actor_name.trim().replace(/\s+/g,' ').slice(0,80) : 'Un miembro';
   return JSON.stringify({type:'duo-personal-expense',id:event.id,
     body:`${actor} registró un gasto de ${money(event.amount,event.currency)} · ${event.category_name||'Sin categoría'}`});
 }

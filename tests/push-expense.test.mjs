@@ -40,6 +40,11 @@ test('a confirmed personal expense is formatted with actor, amount, currency and
   assert.equal(payload.id,event.id);
 });
 
+test('a person in another independent space keeps their own visible name in notifications',()=>{
+  const payload=JSON.parse(expensePushPayload({...event,actor_name:'Camila'}));
+  assert.equal(payload.body,'Camila registró un gasto de $25.000 ARS · Supermercado');
+});
+
 test('push endpoints must use known HTTPS browser push providers',()=>{
   assert.equal(allowedPushEndpoint(endpoint),true);
   assert.equal(allowedPushEndpoint('https://web.push.apple.com/Q123'),true);

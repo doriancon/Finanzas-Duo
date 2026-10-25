@@ -4,7 +4,7 @@ import type {SharedSpace} from './auth';
 import {supabase} from './supabase';
 
 const vapidPublicKey=import.meta.env.VITE_PUSH_VAPID_PUBLIC_KEY?.trim()||'';
-type PushName='Dorian'|'Dani';
+type PushName=string;
 
 const supported=()=>window.isSecureContext&&'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
 const keyBytes=(key:string)=>{
@@ -75,7 +75,7 @@ export async function disablePushOnThisDevice(client:SupabaseClient,spaceId:stri
   await subscription.unsubscribe();
 }
 
-export function PushSettings({space}:{space:SharedSpace}){
+export function PushSettings({space,displayName}:{space:SharedSpace;displayName:string}){
   const [name,setName]=useState<PushName|''>('');
   const [enabled,setEnabled]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -85,36 +85,22 @@ export function PushSettings({space}:{space:SharedSpace}){
     if(!available||!supabase)return;
     let active=true;
     void readSettings(supabase,space.id).then(settings=>{
-      if(active){setName(settings.name);setEnabled(settings.enabled)}
+      if(active){setName(displayName||settings.name);setEnabled(settings.enabled)}
     }).catch(error=>{if(active)setMessage(error instanceof Error?error.message:'No se pudo consultar el estado.')});
     return()=>{active=false};
-  },[available,space.id]);
-  const chooseName=async(next:PushName|'')=>{
-    setName(next);
-    if(!next||!supabase)return;
-    setBusy(true);setMessage('');
-    try{
-      const userId=await currentUser(supabase);
-      const saved=await supabase.from('finance_push_profiles').upsert(
-        {space_id:space.id,user_id:userId,display_name:next},{onConflict:'space_id,user_id'});
-      if(saved.error)throw new Error(saved.error.message);
-    }catch(error){setMessage(error instanceof Error?error.message:'No se pudo guardar tu nombre.');setName('')}
-    finally{setBusy(false)};
-  };
+  },[available,space.id,displayName]);
   const toggle=async()=>{
     if(!supabase||!available||busy)return;
     setBusy(true);setMessage('');
     try{
       if(enabled){await disablePushOnThisDevice(supabase,space.id);setEnabled(false);setMessage('Notificaciones desactivadas en este dispositivo.')}
-      else if(name){await activate(supabase,space.id,name);setEnabled(true);setMessage('Notificaciones activadas en este dispositivo.')}
+      else if(displayName||name){await activate(supabase,space.id,displayName||name);setEnabled(true);setMessage('Notificaciones activadas en este dispositivo.')}
     }catch(error){setMessage(error instanceof Error?error.message:'No se pudieron configurar las notificaciones.')}
     finally{setBusy(false)};
   };
   return <section className="panel push-settings"><div className="section-head"><div><h2>Notificaciones de gastos</h2><p>Avisos de gastos personales del espacio compartido.</p></div></div>
-    <label>Tu nombre en los avisos<select value={name} disabled={enabled||busy||!available} onChange={event=>void chooseName(event.target.value as PushName|'')}>
-      <option value="">Elegí tu nombre</option><option value="Dorian">Dorian</option><option value="Dani">Dani</option>
-    </select></label>
-    <button className="small-add" disabled={!available||busy||(!enabled&&!name)} onClick={()=>void toggle()}>
+    <p className="form-hint">Los avisos mostrarán {displayName||name||'tu nombre configurado arriba'}.</p>
+    <button className="small-add" disabled={!available||busy||(!enabled&&!displayName&&!name)} onClick={()=>void toggle()}>
       {busy?'Un momento…':enabled?'Desactivar notificaciones':'Activar notificaciones'}
     </button>
     <p className="form-hint">{enabled?'Activadas en este dispositivo.':'Cada dispositivo se activa por separado.'} En iPhone, primero agregá Duo Finance a la pantalla de inicio y abrila desde allí.</p>

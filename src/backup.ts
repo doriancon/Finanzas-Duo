@@ -67,3 +67,8 @@ export function downloadFinanceBackup(storage: Pick<Storage, 'getItem'> = localS
   }
   return filename;
 }
+
+// Exporta una lectura reciente de Supabase sin escribirla en localStorage.
+export function downloadSharedFinanceBackup(data: FinanceData): string {
+  return downloadFinanceBackup({ getItem: key => key === BACKUP_STORAGE_KEY ? JSON.stringify(data) : null });
+}

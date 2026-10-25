@@ -91,7 +91,8 @@ export async function loadFinanceSpace(client: SupabaseClient, spaceId: string):
     giroReference: e.giro_reference || undefined, giroProfit: e.giro_profit == null ? undefined : number(e.giro_profit),
     giroProfitCurrency: e.giro_profit_currency || undefined, fundId: e.fund_id || undefined,
     categoryId: e.category_id || undefined, incomeSourceId: e.income_source_id || undefined,
-    description: e.description, date: e.entry_date, createdAt: e.created_at } as Entry));
+    description: e.description, date: e.entry_date, createdAt: e.created_at,
+    actorName: e.actor_name || undefined } as Entry));
   return data;
 }
 

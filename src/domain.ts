@@ -30,6 +30,7 @@ export type Entry = {
   description: string;
   date: string;
   createdAt?: string;
+  actorName?: string;
 };
 export type GiroLink = { id: string; giroId: string; transferId: string; fromAmount: number; toAmount: number };
 export type GiroResult = { giroId: string; costArs: number; feesArs: number; profitArs: number; evidence: string; confirmedAt: string; recognizedMonth: string };
