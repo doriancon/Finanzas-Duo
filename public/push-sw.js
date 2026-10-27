@@ -1,12 +1,13 @@
 self.addEventListener('push', event => {
   let message;
   try { message = event.data?.json(); } catch { return; }
-  if (!message || message.type !== 'duo-personal-expense' || typeof message.id !== 'string') return;
-  event.waitUntil(self.registration.showNotification('Duo Finance', {
-    body: String(message.body || 'Se registró un gasto personal.'),
+  if (!message || !['duo-personal-expense', 'duo-fund-reminder'].includes(message.type) || typeof message.id !== 'string') return;
+  const reminder = message.type === 'duo-fund-reminder';
+  event.waitUntil(self.registration.showNotification(reminder ? 'Duo Finance 💜' : 'Duo Finance', {
+    body: String(message.body || (reminder ? 'Hoy tenés un aporte programado.' : 'Se registró un gasto personal.')),
     icon: '/dyd-192.png',
     badge: '/favicon-48.png',
-    tag: `duo-expense-${message.id}`,
+    tag: `${reminder ? 'duo-fund' : 'duo-expense'}-${message.id}`,
     renotify: false,
     data: { url: '/' },
   }));
