@@ -115,3 +115,41 @@
   .content{padding-bottom:calc(155px + env(safe-area-inset-bottom))}
 }
 @media(max-width:375px){.bottom-nav button span{font-size:10px}}
+
+/* Deudas por cobrar. */
+.money-edit-input{font-variant-numeric:tabular-nums}
+.debt-page{display:grid;gap:20px}
+.debt-page .page-intro{margin-bottom:0}
+.debt-summary{display:flex;flex-wrap:wrap;gap:14px}
+.debt-summary>div{min-width:145px;display:grid;gap:5px;padding:13px 17px;border-radius:14px;background:#f3edff}
+.debt-summary span,.debt-amounts span{font-size:11px;color:#756585}
+.debt-summary strong{font-size:19px;color:#58329a}
+.debt-summary p{margin:0;color:#81788b;font-size:13px}
+.debt-filters{display:grid;grid-template-columns:minmax(180px,1fr) auto auto;gap:10px;margin-bottom:18px}
+.debt-filters .search{display:flex;align-items:center;gap:7px;background:#f8f5fc;border-radius:10px;padding:0 12px}
+.debt-filters input{border:0;background:transparent;width:100%;min-height:44px;outline:none}
+.debt-filters select{border:1px solid #e9e1f2;border-radius:10px;background:#fff;padding:10px;min-height:44px}
+.debt-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.debt-card{min-width:0;background:#faf8fe;border-radius:17px;padding:18px;display:grid;gap:13px}
+.debt-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.debt-card h3{font-size:16px;margin:0 0 4px}
+.debt-card-head p{font-size:12px;color:#756d7d;margin:0}
+.debt-state{border-radius:100px;padding:6px 9px;background:#eee5ff;color:#663aaf;font-size:10px;font-weight:800;white-space:nowrap}
+.debt-state.paid{background:#dff2e9;color:#28775d}.debt-state.cancelled{background:#eeeaf0;color:#746a79}
+.debt-amounts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.debt-amounts>div{display:grid;gap:4px;min-width:0}
+.debt-amounts strong{font-size:14px;overflow-wrap:anywhere}
+.debt-progress{height:7px;border-radius:10px;background:#e8dfef;overflow:hidden}
+.debt-progress span{display:block;height:100%;background:#7744e8;border-radius:inherit}
+.debt-card>small,.debt-notes,.debt-card details{font-size:11px;color:#7f7488}
+.debt-notes{margin:0;overflow-wrap:anywhere}
+.debt-card details summary{cursor:pointer;font-weight:700;color:#613cac}
+.debt-card details p{margin:7px 0}
+.debt-actions{display:flex;flex-wrap:wrap;align-items:center;gap:9px}
+.debt-actions button{min-height:44px}
+.debt-cancel-confirm{display:flex;align-items:flex-start;gap:10px;line-height:1.4}
+.debt-cancel-confirm input{flex:none;width:20px;height:20px;margin-top:1px}
+.movement-form textarea{width:100%;border:1px solid #e7dff0;border-radius:10px;padding:10px;font:inherit;resize:vertical}
+@media(max-width:750px){.debt-list{grid-template-columns:1fr}}
+@media(max-width:650px){.debt-filters{grid-template-columns:1fr 1fr}.debt-filters .search{grid-column:1/-1}.debt-page .title-actions{align-items:stretch;flex-direction:column}.debt-page .title-actions .primary-button{display:inline-flex;width:100%}}
+@media(max-width:375px){.debt-amounts strong{font-size:12px}}

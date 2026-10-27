@@ -1,6 +1,6 @@
 export type Currency = 'ARS' | 'USD' | 'USDT' | 'BOB';
 export type AccountMethod = 'Efectivo' | 'Transferencia' | 'Billetera';
-export type Scope = 'everyday' | 'business' | 'giro';
+export type Scope = 'everyday' | 'business' | 'giro' | 'receivable';
 export type EntryKind = 'expense' | 'income' | 'transfer' | 'reserve' | 'withdraw' | 'allocation' | 'giro';
 export type FundKind = 'goal' | 'pasanaco';
 export type GoalIcon = 'plane' | 'sun' | 'house' | 'heart' | 'sparkles' | 'target';
@@ -31,6 +31,7 @@ export type Entry = {
   date: string;
   createdAt?: string;
   actorName?: string;
+  actorUserId?: string;
 };
 export type GiroLink = { id: string; giroId: string; transferId: string; fromAmount: number; toAmount: number };
 export type GiroResult = { giroId: string; costArs: number; feesArs: number; profitArs: number; evidence: string; confirmedAt: string; recognizedMonth: string };
