@@ -9,8 +9,8 @@ import {supabase} from './supabase';
 import {cancelReceivable,createReceivableLoan,deleteReceivable,loadReceivables,paidAmount,receivableState,recordReceivablePayment,
   saveReceivable,setReceivableStatus,type Receivable,type ReceivablePayment,type ReceivableState} from './debts-remote';
 
-const states:Record<ReceivableState,string>={pending:'Pendiente',partial:'Pagada parcialmente',
-  paid:'Cobrada completamente',cancelled:'Anulada'};
+const states:Record<ReceivableState,string>={pending:'Pendiente',partial:'Pago parcial',
+  paid:'Cobrada',cancelled:'Anulada'};
 const today=()=>dateISO(new Date());
 
 function DebtEditor({debt,data,enabledCurrencies,onClose,onSaved,onLedgerChanged,spaceId,userId}:{debt:Receivable|null;
@@ -86,7 +86,7 @@ function PaymentEditor({debt,payments,data,userId,onClose,onSaved,spaceId}:{debt
   payments:ReceivablePayment[];data:FinanceData;userId:string;onClose:()=>void;
   onSaved:()=>Promise<void>;spaceId:string}){
   const remaining=Math.max(0,Math.round((debt.principal-paidAmount(debt,payments))*currencyScale(debt.currency))/currencyScale(debt.currency));
-  const [amount,setAmount]=useState(moneyText(remaining,debt.currency));
+  const [amount,setAmount]=useState('');
   const [accountId,setAccountId]=useState(data.accounts.find(account=>account.currency===debt.currency)?.id||'');
   const [existingId,setExistingId]=useState('');
   const [busy,setBusy]=useState(false);
@@ -111,8 +111,9 @@ function PaymentEditor({debt,payments,data,userId,onClose,onSaved,spaceId}:{debt
     }catch(cause){setError(cause instanceof Error?cause.message:'No se pudo registrar el cobro.')}
     finally{setBusy(false)}
   };
-  return <SheetFrame title="Registrar cobro" onClose={onClose}><form className="movement-form" onSubmit={save}>
+  return <SheetFrame title="Registrar pago" onClose={onClose}><form className="movement-form" onSubmit={save}>
     <div className="goal-preview"><span>{debt.person} · {debt.currency}</span><strong>{formatMoney(remaining,debt.currency)} pendientes</strong></div>
+    <p className="form-hint">Podés registrar cualquier pago parcial hasta completar el saldo pendiente.</p>
     <label>¿Ya registraste este cobro en Movimientos?<select value={existingId} onChange={event=>setExistingId(event.target.value)}>
       <option value="">No; agregar el cobro a la cuenta elegida</option>
       {existing.map(entry=><option key={entry.id} value={entry.id}>{entry.date} · {formatMoney(entry.amount,entry.currency)} · {entry.description}</option>)}
@@ -120,14 +121,14 @@ function PaymentEditor({debt,payments,data,userId,onClose,onSaved,spaceId}:{debt
     {selected?<p className="form-hint">{debt.debtType==='loan'
       ?'Se vinculará el ingreso existente y se clasificará como devolución de préstamo. No cambia el importe ni el saldo; dejará de contar como ingreso personal.'
       :'Se vinculará el ingreso existente. No se creará otro movimiento ni cambiará el saldo.'}</p>:<>
-      <label>Importe cobrado<MoneyField value={amount} onChange={setAmount} currency={debt.currency} required/></label>
+      <label>Importe recibido<MoneyField value={amount} onChange={setAmount} currency={debt.currency} required/></label>
       <label>Cuenta receptora<select value={accountId} onChange={event=>setAccountId(event.target.value)} required>
         {accounts.map(account=><option key={account.id} value={account.id}>{account.currency} · {account.name}</option>)}
       </select></label>
       <p className="form-hint">Solo al guardar este cobro se sumará el importe a la cuenta. {debt.debtType==='loan'?'Recuperar capital no es ganancia ni ingreso personal.':'No entra en ingresos personales.'}</p>
     </>}
     {error&&<p role="alert" className="form-error">{error}</p>}
-    <button className="primary-button form-submit" disabled={busy||(!selected&&!accountId)}>{busy?'Guardando…':'Confirmar cobro'}</button>
+    <button className="primary-button form-submit" disabled={busy||(!selected&&!accountId)}>{busy?'Guardando…':'Registrar pago'}</button>
   </form></SheetFrame>;
 }
 
@@ -221,17 +222,17 @@ export function DebtsPage({spaceId,userId,data,enabledCurrencies,onPaid}:{spaceI
         const history=payments.filter(payment=>payment.receivableId===debt.id);
         return <article className="debt-card" key={debt.id}>
           <div className="debt-card-head"><div><h3>{debt.person}</h3><p>{debt.description} · {debt.debtType==='loan'?'Préstamo entregado':'Dinero por cobrar'}</p></div><span className={`debt-state ${state}`}>{states[state]}</span></div>
-          <div className="debt-amounts"><div><span>Original</span><strong>{formatMoney(debt.principal,debt.currency)}</strong></div>
-            <div><span>Cobrado</span><strong>{formatMoney(paid,debt.currency)}</strong></div>
-            <div><span>Pendiente</span><strong>{formatMoney(remaining,debt.currency)}</strong></div></div>
+          <div className="debt-amounts"><div><span>Deuda original</span><strong>{formatMoney(debt.principal,debt.currency)}</strong></div>
+            <div><span>Total pagado</span><strong>{formatMoney(paid,debt.currency)}</strong></div>
+            <div><span>Saldo pendiente</span><strong>{formatMoney(remaining,debt.currency)}</strong></div></div>
           <div className="debt-progress" role="progressbar" aria-label={`Cobrado de ${debt.person}`} aria-valuemin={0} aria-valuemax={100}
             aria-valuenow={Math.min(100,Math.round(paid/debt.principal*100))}><span style={{width:`${Math.min(100,paid/debt.principal*100)}%`}}/></div>
           <small>Creada: {debt.createdOn}{debt.dueOn?` · Pago estimado: ${debt.dueOn}`:''}{debt.sourceAccountId?` · Cuenta: ${data.accounts.find(account=>account.id===debt.sourceAccountId)?.name||debt.sourceAccountId}`:''}</small>
           {debt.notes&&<p className="debt-notes">{debt.notes}</p>}
           {history.length>0&&<details><summary>Historial de pagos ({history.length})</summary>
-            {history.map(payment=><p key={payment.id}>{new Date(payment.paidAt).toLocaleDateString('es-AR')} · {formatMoney(payment.amount,debt.currency)} · {payment.accountId}{payment.paymentReason==='cancellation_return'?' · capital devuelto al anular':payment.linkedExisting?' · movimiento vinculado':''}</p>)}
+            {history.map(payment=><p key={payment.id}>{new Date(payment.paidAt).toLocaleDateString('es-AR')} · {formatMoney(payment.amount,debt.currency)} · {data.accounts.find(account=>account.id===payment.accountId)?.name||payment.accountId}{payment.paymentReason==='cancellation_return'?' · capital devuelto al anular':payment.linkedExisting?' · movimiento vinculado':''}</p>)}
           </details>}
-          <div className="debt-actions">{state==='pending'||state==='partial'?<button className="small-add" onClick={()=>setPaying(debt)}>Registrar cobro</button>:null}
+          <div className="debt-actions">{state==='pending'||state==='partial'?<button className="small-add" onClick={()=>setPaying(debt)}>Registrar pago</button>:null}
             {debt.cancellationMode!=='record_return'&&<button className="text-link" onClick={()=>setEditor(debt)}>Editar</button>}
             {state==='cancelled'&&debt.cancellationMode==='close_only'?<button className="text-link" onClick={()=>void mutate(()=>setReceivableStatus(supabase!,spaceId,debt.id,'open'))}>Reabrir</button>
               :state!=='paid'&&state!=='cancelled'?<button className="text-link" onClick={()=>setCancelling(debt)}>Anular</button>:null}

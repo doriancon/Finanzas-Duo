@@ -29,6 +29,21 @@ export function AuthRoot({ children }: { children: (space: SharedSpace | null, e
     const client = supabase;
     if (!client) return;
     let active = true;
+    let checkingMembership = false;
+    const checkMembership = async () => {
+      const userId = authUserId.current;
+      if (!active || !userId || checkingMembership) return;
+      checkingMembership = true;
+      try {
+        const found = await findFinanceSpace(userId);
+        if (active && authUserId.current === userId) {
+          setSpace(previous => previous?.id === found?.id && previous?.role === found?.role ? previous : found);
+          setReady(true);
+        }
+      } catch {
+        // Un fallo de red no elimina la sesión. RLS sigue controlando el acceso.
+      } finally { checkingMembership = false; }
+    };
     const { data: listener } = client.auth.onAuthStateChange((_event, current) => {
       if (!active) return;
       if (current?.user.id && current.user.id === authUserId.current) { setSession(current); return; }
@@ -48,7 +63,12 @@ export function AuthRoot({ children }: { children: (space: SharedSpace | null, e
           .catch(cause => { if (active && authUserId.current === current.user.id) { setError(String(cause)); setReady(true); } });
       }, 0);
     });
-    return () => { active = false; authUserId.current = null; listener.subscription.unsubscribe(); };
+    const timer = window.setInterval(() => { void checkMembership(); }, 5000);
+    window.addEventListener('focus', checkMembership);
+    return () => {
+      active = false; authUserId.current = null; listener.subscription.unsubscribe();
+      window.clearInterval(timer); window.removeEventListener('focus', checkMembership);
+    };
   }, []);
 
   if (!supabaseConfigured) return children(null, null, null);
@@ -142,9 +162,9 @@ function SpaceSetup({ onReady }: { onReady: (space: SharedSpace) => void }) {
     <h1>Elegí tu espacio</h1><p>Creá un espacio independiente o unite a uno con una invitación.</p>
     <label>Tu nombre visible<input value={displayName} maxLength={80} onChange={event => setDisplayName(event.target.value)} /></label>
     <label>Nombre de tu espacio<input value={spaceName} maxLength={80} onChange={event => setSpaceName(event.target.value)} /></label>
-    <button className="primary-button" onClick={() => void create()} disabled={busy || !displayName.trim() || !spaceName.trim()}>Crear mi espacio</button>
+    <button className="primary-button" onClick={() => void create()} disabled={busy || !displayName.trim() || !spaceName.trim()}>Crear mi espacio financiero</button>
     <label>Código de invitación<input value={token} onChange={e => setToken(e.target.value)} placeholder="Pegá el código recibido" /></label>
-    <button className="small-add" onClick={() => void join()} disabled={busy || !token.trim() || !displayName.trim()}>Unirme con invitación</button>
+    <button className="small-add" onClick={() => void join()} disabled={busy || !token.trim() || !displayName.trim()}>Unirme mediante invitación</button>
     {error && <p className="form-error" role="alert">{error}</p>}
     <LocalBackupButton />
     <button className="auth-switch" onClick={() => void supabase?.auth.signOut({ scope: 'local' })}>Cerrar sesión</button></div></div>;

@@ -153,3 +153,12 @@
 @media(max-width:750px){.debt-list{grid-template-columns:1fr}}
 @media(max-width:650px){.debt-filters{grid-template-columns:1fr 1fr}.debt-filters .search{grid-column:1/-1}.debt-page .title-actions{align-items:stretch;flex-direction:column}.debt-page .title-actions .primary-button{display:inline-flex;width:100%}}
 @media(max-width:375px){.debt-amounts strong{font-size:12px}}
+
+.space-members{margin-top:20px}
+.space-member-list{display:grid}
+.space-member-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-top:1px solid #f0eaf5}
+.space-member-row>div{display:grid;gap:4px;min-width:0}
+.space-member-row strong{font-size:13px;overflow-wrap:anywhere}
+.space-member-row span{font-size:11px;color:#8d8199}
+.space-member-row button{min-height:44px;flex:none}
+@media(max-width:375px){.space-member-row{align-items:flex-start;flex-direction:column}.space-member-row button{align-self:flex-start}}

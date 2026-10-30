@@ -40,6 +40,21 @@ export async function acceptFinanceInvite(client: SupabaseClient, token: string)
   return data as string;
 }
 
+export type FinanceSpaceMember = { userId: string; displayName: string; role: 'owner' | 'member' };
+
+export async function listFinanceSpaceMembers(client: SupabaseClient, spaceId: string): Promise<FinanceSpaceMember[]> {
+  const { data, error } = await client.rpc('list_finance_space_members', { p_space_id: spaceId });
+  if (error) throw new Error(error.message);
+  return (data || []).map((row: { user_id: string; display_name: string; role: 'owner' | 'member' }) => ({
+    userId: row.user_id, displayName: row.display_name, role: row.role,
+  }));
+}
+
+export async function removeFinanceSpaceMember(client: SupabaseClient, spaceId: string, userId: string): Promise<void> {
+  const { error } = await client.rpc('remove_finance_space_member', { p_space_id: spaceId, p_user_id: userId });
+  if (error) throw new Error(error.message);
+}
+
 export async function loadFinanceSpace(client: SupabaseClient, spaceId: string): Promise<FinanceData> {
   const fetchAll = async (table: Table): Promise<Row[]> => {
     const rows: Row[] = [];
