@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import { ArrowLeftRight, ArrowRight, Bell, BriefcaseBusiness, CalendarDays, Check, ChevronLeft, ChevronRight, CreditCard, Download, Edit3, HandCoins, Heart, Home, Menu, Plus, Settings, Target, Trash2, TrendingUp, X } from 'lucide-react';
-import { accountBalance, canApplyEntry, Category, CURRENCIES, currencyBalance, Currency, Entry, EntryKind, everydayExpenses, FinanceData, formatMoney, Goal, incomeGoalAmount, monthKey, monthLabel, pct, reservedBalance, shiftMonth } from './domain';
+import { accountBalance, canApplyEntry, Category, CURRENCIES, currencyBalance, Currency, Entry, EntryKind, everydayExpenses, FinanceData, formatMoney, Goal, includeBalanceAdjustment, incomeGoalAmount, mergeConfirmedBalanceAdjustments, monthKey, monthLabel, pct, reservedBalance, shiftMonth, type BalanceAdjustment } from './domain';
 import { emptyData, loadData, saveData } from './data';
 import { downloadFinanceBackup, downloadSharedFinanceBackup } from './backup';
 import { LoadingScreen, type SharedSpace } from './auth';
-import { createFinanceInvite, loadFinanceSpace, persistFinanceChange } from './finance-remote';
+import { adjustFinanceAccountBalance, createFinanceInvite, loadFinanceSpace, persistFinanceChange } from './finance-remote';
+import { BalanceAdjustmentsSheet } from './balance-adjustments';
 import { supabase } from './supabase';
 import {disablePushOnThisDevice,PushSettings} from './push';
 import { AccountDeletionSettings } from './account-deletion';
@@ -22,7 +23,7 @@ import { BusinessCategories } from './business-categories';
 import { DebtsPage } from './debts';
 
 type Tab = 'home' | 'movements' | 'stats' | 'budget' | 'savings' | 'business' | 'giros' | 'debts' | 'settings';
-type Sheet = 'movement' | 'budget' | 'category' | 'goal' | 'income-goal' | 'income-sources' | 'pasanaco' | 'fund-move' | 'accounts' | null;
+type Sheet = 'movement' | 'budget' | 'category' | 'goal' | 'income-goal' | 'income-sources' | 'pasanaco' | 'fund-move' | 'accounts' | 'balance-adjustments' | null;
 const now = new Date();
 const thisMonth = monthKey(now);
 const nav: {id:Tab;label:string;icon:React.ReactNode}[] = [
@@ -65,6 +66,12 @@ export default function App({sharedSpace,email,userId}:{sharedSpace:SharedSpace|
   const carousel=useRef<HTMLDivElement>(null);
   const drawerStartX=useRef<number|null>(null);
   const saveLock=useRef(false);
+  const confirmedAdjustments=useRef({spaceId:sharedSpace?.id||'',records:new Map<string,BalanceAdjustment>()});
+  const adjustmentsFor=(spaceId:string)=>{
+    if(confirmedAdjustments.current.spaceId!==spaceId)
+      confirmedAdjustments.current={spaceId,records:new Map<string,BalanceAdjustment>()};
+    return confirmedAdjustments.current.records;
+  };
   const initialLoad=useRef<Promise<FinanceData>|null>(null);
   const visibleNav=nav.filter(item=>(item.id!=='giros'||workspace.showGiros)&&(item.id!=='business'||workspace.showBusiness));
   const visibleCurrencies=CURRENCIES.filter(currency=>workspace.enabledCurrencies.includes(currency)||
@@ -101,7 +108,7 @@ export default function App({sharedSpace,email,userId}:{sharedSpace:SharedSpace|
       inFlight=true;
       const request=!hasLoaded&&initialLoad.current?initialLoad.current:loadFinanceSpace(client,sharedSpace.id);
       if(!hasLoaded)initialLoad.current=request;
-      void request.then(next=>{if(active){setData(next);setLoaded(true);setSyncError('');hasLoaded=true}})
+      void request.then(next=>{if(active){setData(mergeConfirmedBalanceAdjustments(next,adjustmentsFor(sharedSpace.id).values()));setLoaded(true);setSyncError('');hasLoaded=true}})
         .catch(error=>{if(active){setSyncError(error instanceof Error?error.message:String(error));setLoaded(true)}})
         .finally(()=>{inFlight=false;if(initialLoad.current===request)initialLoad.current=null});
     };
@@ -122,11 +129,29 @@ export default function App({sharedSpace,email,userId}:{sharedSpace:SharedSpace|
   const persist=async(candidate:FinanceData)=>{
     if(!sharedSpace||!supabase){try{saveData(candidate);setData(candidate);return null}catch{return 'No se pudo guardar en este dispositivo.'}}
     try{await persistFinanceChange(supabase,sharedSpace.id,data,candidate)}
-    catch(error){try{setData(await loadFinanceSpace(supabase,sharedSpace.id))}catch{}return error instanceof Error?error.message:'No se pudo guardar el cambio.'}
-    try{setData(await loadFinanceSpace(supabase,sharedSpace.id))}catch{setData(candidate)}
+    catch(error){try{setData(mergeConfirmedBalanceAdjustments(await loadFinanceSpace(supabase,sharedSpace.id),adjustmentsFor(sharedSpace.id).values()))}catch{}return error instanceof Error?error.message:'No se pudo guardar el cambio.'}
+    try{setData(mergeConfirmedBalanceAdjustments(await loadFinanceSpace(supabase,sharedSpace.id),adjustmentsFor(sharedSpace.id).values()))}catch{setData(mergeConfirmedBalanceAdjustments(candidate,adjustmentsFor(sharedSpace.id).values()))}
     return null;
   };
   const commit=(candidate:FinanceData,message:string,close=false)=>{void persist(candidate).then(error=>{if(error){setToast(error);return}if(close)setSheet(null);setToast(message)})};
+  const saveBalanceAdjustment=async(accountId:string,newBalance:number,expectedBalance:number,reason:string,requestId:string):Promise<string|null>=>{
+    if(sharedSpace&&supabase){
+      try{
+        const adjustment=await adjustFinanceAccountBalance(supabase,sharedSpace.id,accountId,newBalance,expectedBalance,reason,requestId);
+        adjustmentsFor(sharedSpace.id).set(adjustment.id,adjustment);
+        try{setData(mergeConfirmedBalanceAdjustments(await loadFinanceSpace(supabase,sharedSpace.id),adjustmentsFor(sharedSpace.id).values()))}
+        catch{setData(previous=>includeBalanceAdjustment(previous,adjustment))}
+        setToast('Saldo ajustado. El historial de movimientos se conservó.');return null;
+      }catch(cause){return cause instanceof Error?cause.message:'No se pudo ajustar el saldo.'}
+    }
+    const account=data.accounts.find(item=>item.id===accountId);
+    if(!account||accountBalance(data,accountId)!==expectedBalance)return 'El saldo cambió. Volvé a revisar la cuenta.';
+    const adjustment={id:requestId,accountId,currency:account.currency,previousBalance:expectedBalance,newBalance,
+      delta:newBalance-expectedBalance,reason,actorUserId:userId,actorName:workspace.displayName||'Usuario local',createdAt:new Date().toISOString()};
+    const updated=includeBalanceAdjustment(data,adjustment);
+    try{saveData(updated);setData(updated);setToast('Saldo ajustado. El historial de movimientos se conservó.');return null}
+    catch{return 'No se pudo guardar el ajuste en este dispositivo.'}
+  };
   const saveEntry=async(entry:Entry)=>{if(saveLock.current)return 'El movimiento ya se está guardando.';if(data.entries.some(e=>e.id===entry.id)&&entryLocked(entry))return 'Este movimiento tiene vínculos y no puede editarse.';const without={...data,entries:data.entries.filter(e=>e.id!==entry.id)};const error=canApplyEntry(without,entry);if(error)return error;const candidate={...without,entries:[entry,...without.entries]};if(candidate.accounts.some(a=>accountBalance(candidate,a.id)<-0.000001)||[...candidate.goals.map(g=>g.id),...(candidate.pasanaco?[candidate.pasanaco.id]:[])].some(id=>reservedBalance(candidate,id)<-0.000001))return 'Este cambio dejaría un saldo negativo.';saveLock.current=true;const failed=await persist(candidate);if(failed){saveLock.current=false;return failed}setSheet(null);setEditingEntry(null);setToast('Movimiento guardado. Saldos y análisis actualizados.');return null};
   const saveGiro=async(entry:Entry)=>{if(saveLock.current)return 'El giro ya se está guardando.';if(data.entries.some(e=>e.id===entry.id)&&entryLocked(entry))return 'Este giro tiene vínculos o ganancia confirmada y no puede editarse.';const without={...data,entries:data.entries.filter(e=>e.id!==entry.id)};const error=canApplyEntry(without,entry);if(error)return error;const candidate={...without,entries:[entry,...without.entries]};if(candidate.accounts.some(a=>accountBalance(candidate,a.id)<-0.000001))return 'Este cambio dejaría una cuenta con saldo negativo.';saveLock.current=true;const failed=await persist(candidate);if(failed){saveLock.current=false;return failed}setGiroOpen(false);setEditingGiro(null);setToast('Giro guardado. Ambas cuentas generales se actualizaron.');return null};
   const deleteEntry=()=>{if(!deletingEntry)return;if(entryLocked(deletingEntry)){setToast('No se puede eliminar un movimiento vinculado o con ganancia confirmada.');setDeletingEntry(null);return}const candidate={...data,entries:data.entries.filter(e=>e.id!==deletingEntry.id)};if(candidate.accounts.some(a=>accountBalance(candidate,a.id)<-0.000001)||[...candidate.goals.map(g=>g.id),...(candidate.pasanaco?[candidate.pasanaco.id]:[])].some(id=>reservedBalance(candidate,id)<-0.000001)){setToast('No se puede eliminar: dejaría un saldo negativo.');setDeletingEntry(null);return}void persist(candidate).then(error=>{if(error){setToast(error);return}setDeletingEntry(null);setToast('Movimiento eliminado definitivamente.')})};
@@ -165,7 +190,8 @@ export default function App({sharedSpace,email,userId}:{sharedSpace:SharedSpace|
     {sheet==='goal'&&<GoalSheet data={data} goal={editingGoal} onClose={()=>setSheet(null)} onSave={goal=>commit({...data,goals:editingGoal?data.goals.map(g=>g.id===goal.id?goal:g):[...data.goals,goal]},editingGoal?'Meta actualizada.':'Meta creada.',true)}/>}
     {sheet==='pasanaco'&&<PasanacoSheet data={data} onClose={()=>setSheet(null)} onSave={pasanaco=>commit({...data,pasanaco},'Pasanaco configurado.',true)}/>}
     {sheet==='fund-move'&&<FundMoveSheet data={data} fundId={fundId} action={fundAction} onClose={()=>setSheet(null)} onSave={saveEntry}/>}
-    {sheet==='accounts'&&<AccountsSheet data={data} enabledCurrencies={workspace.enabledCurrencies} onClose={()=>setSheet(null)} onSave={accounts=>commit({...data,accounts},'Cuentas actualizadas.',true)}/>}
+    {sheet==='accounts'&&<AccountsSheet data={data} enabledCurrencies={workspace.enabledCurrencies} onClose={()=>setSheet(null)} onAdjust={()=>setSheet('balance-adjustments')} onSave={accounts=>commit({...data,accounts},'Cuentas actualizadas.',true)}/>}
+    {sheet==='balance-adjustments'&&<BalanceAdjustmentsSheet data={data} onClose={()=>setSheet(null)} onSave={saveBalanceAdjustment}/>}
     {inviteToken&&<SheetFrame title="Invitar a la otra persona" onClose={()=>setInviteToken('')}><div className="invite-content"><p>Compartí este código solo con la persona que querés sumar a tu espacio. Vence en 7 días y permite ocupar el segundo lugar.</p><label>Código de invitación<input readOnly value={inviteToken} onFocus={e=>e.currentTarget.select()}/></label><button className="primary-button" onClick={()=>void navigator.clipboard.writeText(inviteToken).then(()=>setToast('Código copiado.'))}>Copiar código</button></div></SheetFrame>}
     {toast&&<div className="toast" role="status"><Check size={17}/>{toast}</div>}
   </div>;

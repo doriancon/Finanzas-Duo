@@ -36,6 +36,7 @@ export type Entry = {
 export type GiroLink = { id: string; giroId: string; transferId: string; fromAmount: number; toAmount: number };
 export type GiroResult = { giroId: string; costArs: number; feesArs: number; profitArs: number; evidence: string; confirmedAt: string; recognizedMonth: string };
 export type GiroCashPlan = { giroId: string; purpose: 'recover' | 'keep' | 'free'; amountArs: number; targetCurrency?: Currency };
+export type BalanceAdjustment = { id: string; accountId: string; currency: Currency; previousBalance: number; newBalance: number; delta: number; reason: string; actorUserId: string | null; actorName: string; createdAt: string };
 export type IncomeGoal = { month: string; currency: Currency; view: IncomeView; previous: number; target: number; growthType: 'percent' | 'fixed'; growth: number; includeConverted?: boolean; rates?: Partial<Record<Currency,number>>; baselineManual?: boolean };
 export type IncomeQuote = { id:string; month:string; from:Currency; to:Currency; rate:number; date:string };
 export type FinanceData = {
@@ -44,6 +45,8 @@ export type FinanceData = {
   giroLinks: GiroLink[];
   giroResults: GiroResult[];
   giroCashPlans: GiroCashPlan[];
+  balanceAdjustments?: BalanceAdjustment[];
+  balanceAdjustmentsReady?: boolean;
   giroAccountingReady?: boolean;
   giroCashPlanReady?: boolean;
   businessOpening: Partial<Record<Currency,number>>;
@@ -74,6 +77,24 @@ export const shiftMonth = (date: Date, offset: number) => new Date(date.getFullY
 export const dateISO = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 export const monthLabel = (date: Date) => new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' }).format(date);
 export const inMonth = (entry: Entry, month: string) => entry.date.slice(0, 7) === month;
+export function uniqueBalanceAdjustments(adjustments: BalanceAdjustment[] = []): BalanceAdjustment[] {
+  const seen = new Set<string>();
+  return adjustments.filter(adjustment => {
+    if (seen.has(adjustment.id)) return false;
+    seen.add(adjustment.id);
+    return true;
+  });
+}
+export function includeBalanceAdjustment(data: FinanceData, adjustment: BalanceAdjustment): FinanceData {
+  const existing = data.balanceAdjustments || [];
+  if (existing.some(item => item.id === adjustment.id)) return data;
+  return { ...data, balanceAdjustments: [...existing, adjustment] };
+}
+export function mergeConfirmedBalanceAdjustments(data: FinanceData, confirmed: Iterable<BalanceAdjustment>): FinanceData {
+  let result = data;
+  for (const adjustment of confirmed) result = includeBalanceAdjustment(result, adjustment);
+  return result;
+}
 export const toggleCategorySelection=(selected:string|null,id:string)=>selected===id?null:id;
 export function paginate<T>(items:T[],page:number,pageSize:10|20|50){
   const pages=Math.max(1,Math.ceil(items.length/pageSize));
@@ -96,7 +117,7 @@ export function accountBalance(data: FinanceData, accountId: string): number {
       if (entry.toAccountId === accountId) balance += units(entry.received ?? entry.amount);
     }
     return balance;
-  }, units(account.opening));
+  }, units(account.opening) + uniqueBalanceAdjustments(data.balanceAdjustments).filter(a=>a.accountId===accountId).reduce((sum,a)=>sum+units(a.delta),0));
   return balance/scale;
 }
 

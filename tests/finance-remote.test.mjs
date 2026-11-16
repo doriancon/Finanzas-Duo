@@ -52,7 +52,7 @@ test('shared rows reconstruct FinanceData and retain all paginated movements', a
     finance_entries: ledger,
     finance_categories: [], finance_income_sources: [], finance_funds: [], finance_budgets: [],
     finance_business_openings: [], finance_income_goals: [], finance_income_quotes: [],
-    finance_giro_links: [], finance_giro_results: [], finance_giro_cash_plans: [],
+    finance_giro_links: [], finance_giro_results: [], finance_giro_cash_plans: [], finance_balance_adjustments: [],
   };
   const orderCalls = [];
   const client = { from(table) { return { select() { return { eq() { return { order(column, options) { orderCalls.push({table,column,ascending:options.ascending}); return this; }, async range(start, end) {

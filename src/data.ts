@@ -37,7 +37,7 @@ export const defaultIncomeSources: IncomeSource[] = [
 ];
 
 export const emptyData = (): FinanceData => ({
-  accounts: defaultAccounts.map(a => ({...a})), entries: [], giroLinks:[], giroResults:[], giroCashPlans:[], giroAccountingReady:true, giroCashPlanReady:true, businessOpening:{},
+  accounts: defaultAccounts.map(a => ({...a})), entries: [], giroLinks:[], giroResults:[], giroCashPlans:[], balanceAdjustments:[], balanceAdjustmentsReady:true, giroAccountingReady:true, giroCashPlanReady:true, businessOpening:{},
   categories: defaultCategories.map(c => ({...c})),
   incomeSources: defaultIncomeSources.map(s => ({...s})),
   goals: [], pasanaco: null, budget: {amount:0,currency:'ARS'}, incomeGoal: null, incomeGoals:[], incomeQuotes:[],
@@ -127,6 +127,8 @@ export const loadData = (): FinanceData => {
   data.giroLinks||=[];
   data.giroResults||=[];
   data.giroCashPlans||=[];
+  data.balanceAdjustments||=[];
+  data.balanceAdjustmentsReady??=true;
   data.giroCashPlanReady??=true;
   data.businessOpening||={};
   for(const category of defaultCategories)if(!data.categories.some(c=>c.id===category.id))data.categories.push({...category});
@@ -147,6 +149,7 @@ export function normalizeAccounts(data:FinanceData):FinanceData {
   }
   data.accounts=normalized;
   data.entries=data.entries.map(e=>({...e,accountId:e.accountId?aliases.get(e.accountId)||e.accountId:undefined,toAccountId:e.toAccountId?aliases.get(e.toAccountId)||e.toAccountId:undefined}));
+  data.balanceAdjustments=(data.balanceAdjustments||[]).map(a=>({...a,accountId:aliases.get(a.accountId)||a.accountId}));
   if(data.pasanaco)data.pasanaco={...data.pasanaco,sourceAccountId:aliases.get(data.pasanaco.sourceAccountId)||data.pasanaco.sourceAccountId};
   return data;
 }

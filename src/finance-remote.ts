@@ -1,10 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Account, Category, Currency, Entry, FinanceData, GiroCashPlan, GiroLink, GiroResult, Goal, IncomeGoal, IncomeQuote, IncomeSource, Pasanaco } from './domain.ts';
+import type { Account, BalanceAdjustment, Category, Currency, Entry, FinanceData, GiroCashPlan, GiroLink, GiroResult, Goal, IncomeGoal, IncomeQuote, IncomeSource, Pasanaco } from './domain.ts';
 import { emptyData } from './data.ts';
 
 type Row = Record<string, any>;
 type Table = 'finance_accounts' | 'finance_categories' | 'finance_income_sources' | 'finance_funds' |
-  'finance_budgets' | 'finance_business_openings' | 'finance_income_goals' | 'finance_income_quotes' | 'finance_entries' | 'finance_giro_links' | 'finance_giro_results' | 'finance_giro_cash_plans';
+  'finance_budgets' | 'finance_business_openings' | 'finance_income_goals' | 'finance_income_quotes' | 'finance_entries' | 'finance_giro_links' | 'finance_giro_results' | 'finance_giro_cash_plans' | 'finance_balance_adjustments';
 
 const tables: Table[] = ['finance_accounts', 'finance_categories', 'finance_income_sources', 'finance_funds',
   'finance_budgets', 'finance_business_openings', 'finance_income_goals', 'finance_income_quotes', 'finance_entries'];
@@ -55,6 +55,18 @@ export async function removeFinanceSpaceMember(client: SupabaseClient, spaceId: 
   if (error) throw new Error(error.message);
 }
 
+export async function adjustFinanceAccountBalance(client: SupabaseClient, spaceId: string, accountId: string,
+  newBalance: number, expectedBalance: number, reason: string, requestId: string): Promise<BalanceAdjustment> {
+  const {data,error}=await client.rpc('adjust_finance_account_balance',{
+    p_space_id:spaceId,p_account_id:accountId,p_new_balance:newBalance,
+    p_expected_balance:expectedBalance,p_reason:reason,p_request_id:requestId,
+  });
+  if(error)throw new Error(error.message);
+  return {id:data.id,accountId:data.account_id,currency:data.currency,previousBalance:number(data.previous_balance),
+    newBalance:number(data.new_balance),delta:number(data.delta),reason:data.reason,
+    actorUserId:data.actor_user_id,actorName:data.actor_name,createdAt:data.created_at};
+}
+
 export async function loadFinanceSpace(client: SupabaseClient, spaceId: string): Promise<FinanceData> {
   const fetchAll = async (table: Table): Promise<Row[]> => {
     const rows: Row[] = [];
@@ -75,10 +87,18 @@ export async function loadFinanceSpace(client: SupabaseClient, spaceId: string):
     try { return {rows:await fetchAll(table),ready:true}; }
     catch(error){if(/could not find the table|does not exist|relation .* does not exist/i.test(String(error))){if(cash)giroCashSchemaUnavailable=true;else giroSchemaUnavailable=true;return {rows:[] as Row[],ready:false}}throw error;}
   };
-  const [links,results,plans]=await Promise.all([optional('finance_giro_links'),optional('finance_giro_results'),optional('finance_giro_cash_plans',true)]);
+  const [links,results,plans,adjustments]=await Promise.all([optional('finance_giro_links'),optional('finance_giro_results'),optional('finance_giro_cash_plans',true),
+    fetchAll('finance_balance_adjustments').then(rows=>({rows,ready:true})).catch(error=>{
+      if(/could not find the table|does not exist|relation .* does not exist/i.test(String(error)))return {rows:[] as Row[],ready:false};
+      throw error;
+    })]);
   const data = emptyData();
   data.giroAccountingReady=links.ready&&results.ready;
   data.giroCashPlanReady=plans.ready;
+  data.balanceAdjustmentsReady=adjustments.ready;
+  data.balanceAdjustments=adjustments.rows.map(row=>({id:row.id,accountId:row.account_id,currency:row.currency,
+    previousBalance:number(row.previous_balance),newBalance:number(row.new_balance),delta:number(row.delta),
+    reason:row.reason,actorUserId:row.actor_user_id,actorName:row.actor_name,createdAt:row.created_at} as BalanceAdjustment));
   data.giroLinks=links.rows.map(row=>({id:row.id,giroId:row.giro_id,transferId:row.transfer_id,fromAmount:number(row.from_amount),toAmount:number(row.to_amount)} as GiroLink));
   data.giroResults=results.rows.map(row=>({giroId:row.giro_id,costArs:number(row.cost_ars),feesArs:number(row.fees_ars),profitArs:number(row.profit_ars),evidence:row.evidence,confirmedAt:row.confirmed_at,recognizedMonth:row.recognized_month} as GiroResult));
   data.giroCashPlans=plans.rows.map(row=>({giroId:row.giro_id,purpose:row.purpose,amountArs:number(row.amount_ars),
